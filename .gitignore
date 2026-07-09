@@ -1,0 +1,12 @@
+node_modules/
+npm-debug.log*
+*.log
+.env
+.DS_Store
+
+# TOÀN BỘ dữ liệu runtime — TUYỆT ĐỐI không commit.
+# Gồm: credentials FRP đã mã hóa, user (passwordHash/2FA secret), role, phiên,
+# audit + API error logs, KHÓA mã hóa (.enc-secret / .jwt-secret),
+# chứng chỉ + PRIVATE KEY (data/ssl, data/certs)...
+# App tự tạo lại các thư mục này khi khởi động (src/config.js).
+data/

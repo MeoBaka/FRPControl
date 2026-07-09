@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FRPControl — Quản lý FRP Dashboard</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 400: '#f87171', 500: '#ef4444', 600: '#dc2626', 700: '#b91c1c' },
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 9999px; }
+    [x-cloak] { display: none !important; }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 antialiased">
+  <div id="app-shell" class="flex flex-col h-screen overflow-hidden">
+    <!-- Thanh trên cùng: brand + tabs (render bởi app.js) -->
+    <div class="h-14 shrink-0 flex items-stretch border-b border-zinc-800 bg-zinc-900/40">
+      <div id="topbar-brand" class="w-64 shrink-0 border-r border-zinc-800 flex items-center transition-all duration-200"></div>
+      <div id="tab-bar" class="flex-1 flex items-end gap-1 px-2 overflow-x-auto bg-zinc-950/40"></div>
+    </div>
+
+    <!-- Body: sidebar + main -->
+    <div class="flex flex-1 overflow-hidden min-h-0">
+      <aside id="sidebar" class="w-64 shrink-0 border-r border-zinc-800 bg-zinc-900/40 flex flex-col transition-all duration-200"></aside>
+      <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+        <header class="h-16 shrink-0 border-b border-zinc-800 bg-zinc-900/30 flex items-center justify-between px-6 gap-4">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <button id="header-back" title="Quay lại" class="hidden w-8 h-8 items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 shrink-0"><i class="fa-solid fa-arrow-left"></i></button>
+            <div class="min-w-0">
+              <h2 id="page-title" class="font-semibold truncate">Dashboard</h2>
+              <p id="page-subtitle" class="text-xs text-zinc-500 truncate"></p>
+            </div>
+          </div>
+          <div id="page-toolbar" class="flex items-center gap-2 shrink-0"></div>
+        </header>
+        <main id="page-content" class="flex-1 overflow-y-auto"></main>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal container (components.js quản lý) -->
+  <div id="modal-root"></div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-4 right-4 z-[60] space-y-2"></div>
+
+  <script src="/js/format.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/state.js"></script>
+  <script src="/js/components.js"></script>
+  <script src="/js/pages/dashboard.js"></script>
+  <script src="/js/pages/providers.js"></script>
+  <script src="/js/pages/provider-status.js"></script>
+  <script src="/js/pages/provider-clients.js"></script>
+  <script src="/js/pages/provider-proxies.js"></script>
+  <script src="/js/pages/nodes.js"></script>
+  <script src="/js/pages/profile.js"></script>
+  <script src="/js/pages/system-users.js"></script>
+  <script src="/js/pages/system-roles.js"></script>
+  <script src="/js/pages/system-certs.js"></script>
+  <script src="/js/pages/system-audit.js"></script>
+  <script src="/js/pages/system-ael.js"></script>
+  <script src="/js/pages/system-settings.js"></script>
+  <script src="/js/pages/node-proxies.js"></script>
+  <script src="/js/pages/node-visitors.js"></script>
+  <script src="/js/pages/node-configs.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "name": "frpcontrol",
+  "version": "1.0.0",
+  "description": "Dashboard quản lý nhiều FRP (frps/frpc) instance thông qua Admin API — Node.js, file-based storage, TailwindCSS.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "frp",
+    "frps",
+    "frpc",
+    "dashboard",
+    "reverse-proxy",
+    "fatedier"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "acme-client": "^5.4.0",
+    "express": "^4.19.2",
+    "selfsigned": "^5.5.0"
+  }
+}
