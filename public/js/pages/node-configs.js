@@ -23,8 +23,8 @@ Pages['nodes/configs'] = {
         });
       }
     );
-    const nodes = Store.nodes();
-    if (!nodes.length) { root.innerHTML = `<div class="p-6">${UI.errorBox('Chưa có node nào.')}</div>`; return; }
+    const nodes = Store.activeNodes();
+    if (!nodes.length) { root.innerHTML = `<div class="p-6">${UI.errorBox('Chưa có node nào đang bật.', 'Tất cả node đã tắt — bật lại ở trang Nodes.')}</div>`; return; }
     const node = Store.selectedNode();
 
     root.innerHTML = `<div class="p-6">

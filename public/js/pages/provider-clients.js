@@ -6,8 +6,8 @@ Pages['providers/clients'] = {
   async render(root) {
     App.setToolbar(UI.btn('<i class="fa-solid fa-rotate-right"></i>', { size: 'sm', attrs: 'id="refresh"' }),
       (el) => el.querySelector('#refresh')?.addEventListener('click', () => App.rerender()));
-    const providers = Store.providers();
-    if (!providers.length) { root.innerHTML = `<div class="p-6">${UI.errorBox('Chưa có provider nào.')}</div>`; return; }
+    const providers = Store.activeProviders();
+    if (!providers.length) { root.innerHTML = `<div class="p-6">${UI.errorBox('Chưa có provider nào đang bật.', 'Tất cả provider đã tắt — bật lại ở trang Providers.')}</div>`; return; }
     const provider = Store.selectedProvider();
     // Nếu được điều hướng kèm yêu cầu mở 1 client cụ thể (từ trang Proxies)
     const openKey = sessionStorage.getItem('open.client');

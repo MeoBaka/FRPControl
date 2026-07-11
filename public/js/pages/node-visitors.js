@@ -1,7 +1,11 @@
 /* Node Visitors — quản lý visitor (store) của 1 node được chọn. */
 window.Pages = window.Pages || {};
 
-const VISITOR_TYPES = ['stcp', 'sudp', 'xtcp'];
+// Khớp IsVisitorType của fork (client/http/model/visitor_definition.go).
+const VISITOR_TYPES = ['stcp', 'sudp', 'xtcp', 'xudp', 'stcp+sudp', 'xtcp+xudp'];
+// Visitor type có ở frp GỐC/cũ. Node frpVariant='standard' chỉ dùng nhóm này.
+const STANDARD_VISITOR_TYPES = ['stcp', 'sudp', 'xtcp'];
+const visitorTypesFor = (node) => (node && node.frpVariant === 'standard' ? STANDARD_VISITOR_TYPES : VISITOR_TYPES);
 
 Pages['nodes/visitors'] = {
   title: 'Node Visitors',
@@ -9,8 +13,8 @@ Pages['nodes/visitors'] = {
   async render(root) {
     App.setToolbar(UI.btn('<i class="fa-solid fa-rotate-right"></i>', { size: 'sm', attrs: 'id="refresh"' }),
       (el) => el.querySelector('#refresh')?.addEventListener('click', () => App.rerender()));
-    const nodes = Store.nodes();
-    if (!nodes.length) { root.innerHTML = `<div class="p-6">${UI.errorBox('Chưa có node nào.')}</div>`; return; }
+    const nodes = Store.activeNodes();
+    if (!nodes.length) { root.innerHTML = `<div class="p-6">${UI.errorBox('Chưa có node nào đang bật.', 'Tất cả node đã tắt — bật lại ở trang Nodes.')}</div>`; return; }
     const node = Store.selectedNode();
 
     const F = Fmt;
@@ -67,12 +71,13 @@ Pages['nodes/visitors'] = {
     UI.paginatedTable(root.querySelector('#tbl'), { headers: HEADERS, rows: (store.visitors || []).map(rowHtml), emptyText: 'Chưa có visitor nào trong store.', emptyHtml: visitorEmpty });
 
     const view = root.querySelector('#visitors-view');
-    view.querySelector('#add-visitor')?.addEventListener('click', () => openVisitorForm(node.id, 'create'));
-    view.querySelector('#add-visitor-empty')?.addEventListener('click', () => openVisitorForm(node.id, 'create'));
+    const allowedTypes = visitorTypesFor(node);
+    view.querySelector('#add-visitor')?.addEventListener('click', () => openVisitorForm(node.id, 'create', null, allowedTypes));
+    view.querySelector('#add-visitor-empty')?.addEventListener('click', () => openVisitorForm(node.id, 'create', null, allowedTypes));
     view.addEventListener('click', async (e) => {
       const edit = e.target.closest('[data-edit]');
       if (edit) {
-        try { const def = await API.getStoreVisitor(node.id, edit.dataset.edit); openVisitorForm(node.id, 'edit', def); }
+        try { const def = await API.getStoreVisitor(node.id, edit.dataset.edit); openVisitorForm(node.id, 'edit', def, allowedTypes); }
         catch (err) { UI.toast('Không lấy được: ' + err.message, 'error'); }
         return;
       }
@@ -86,13 +91,19 @@ Pages['nodes/visitors'] = {
   },
 };
 
-function openVisitorForm(nodeId, mode, existingDef) {
+function openVisitorForm(nodeId, mode, existingDef, allowedTypes = VISITOR_TYPES) {
   const F = Fmt;
   const editing = mode === 'edit';
+  const typeOptions = editing && existingDef && !allowedTypes.includes(existingDef.type)
+    ? [existingDef.type, ...allowedTypes] : allowedTypes;
   const type0 = editing ? existingDef.type : 'stcp';
   const inner0 = editing ? (existingDef[existingDef.type] || {}) : {};
   const transport0 = inner0.transport || {};
   const enable0 = editing ? inner0.enabled !== false : true;
+  const nat0 = inner0.natTraversal || {};
+  // Tùy chọn P2P chỉ áp dụng cho visitor xtcp/xudp/xtcp+xudp. fallbackTimeoutMs chỉ có ở xtcp & xtcp+xudp.
+  const isP2P = (t) => ['xtcp', 'xudp', 'xtcp+xudp'].includes(t);
+  const hasFallback = (t) => t === 'xtcp' || t === 'xtcp+xudp';
 
   const input = (label, name, value = '', opts = {}) => `
     <div class="${opts.full ? 'col-span-2' : ''}">
@@ -114,7 +125,7 @@ function openVisitorForm(nodeId, mode, existingDef) {
         <div>
           <label class="block text-xs text-zinc-400 mb-1">Type *</label>
           <select name="type" ${editing ? 'disabled' : ''} class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none ${editing ? 'text-zinc-500 cursor-not-allowed' : ''}">
-            ${VISITOR_TYPES.map((t) => `<option value="${t}" ${t === type0 ? 'selected' : ''}>${t.toUpperCase()}</option>`).join('')}
+            ${typeOptions.map((t) => `<option value="${t}" ${t === type0 ? 'selected' : ''}>${t.toUpperCase()}</option>`).join('')}
           </select>
         </div>
         <div>
@@ -142,6 +153,37 @@ function openVisitorForm(nodeId, mode, existingDef) {
         </div>
       </div>
 
+      <div id="p2p-options" class="${isP2P(type0) ? '' : 'hidden'} space-y-4">
+        <details class="rounded-lg border border-zinc-800 p-3" open>
+          <summary class="text-sm text-zinc-300 cursor-pointer">XTCP Options</summary>
+          <div class="grid grid-cols-2 gap-3 mt-3">
+            <div>
+              <label class="block text-xs text-zinc-400 mb-1">Protocol</label>
+              <select name="protocol" class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">
+                <option value="quic" ${(inner0.protocol || 'quic') === 'quic' ? 'selected' : ''}>QUIC</option>
+                <option value="kcp" ${inner0.protocol === 'kcp' ? 'selected' : ''}>KCP</option>
+              </select>
+              <p class="text-[11px] text-zinc-500 mt-1">Giao thức tunnel tin cậy chạy trên UDP hole đã đục (không phải payload).</p>
+            </div>
+            <div><div class="text-xs text-zinc-400 mb-1.5">Keep Tunnel Open</div>${toggle('keepTunnelOpen', inner0.keepTunnelOpen)}
+              <p class="text-[11px] text-zinc-500 mt-1">Giữ tunnel P2P luôn mở thay vì mở khi cần.</p></div>
+            ${input('Max Retries per Hour', 'maxRetriesAnHour', inner0.maxRetriesAnHour ?? '', { type: 'number', ph: '0 = không giới hạn' })}
+            ${input('Min Retry Interval (s)', 'minRetryInterval', inner0.minRetryInterval ?? '', { type: 'number' })}
+            <div id="fallback-field" class="col-span-2 ${hasFallback(type0) ? '' : 'hidden'}">
+              ${input('Fallback Timeout (ms)', 'fallbackTimeoutMs', inner0.fallbackTimeoutMs ?? '', { type: 'number', ph: '1000', hint: 'xtcp+xudp: chờ P2P bao lâu (ms) trước khi tự fallback về relay. Mặc định 1000.' })}
+            </div>
+          </div>
+        </details>
+        <details class="rounded-lg border border-zinc-800 p-3" ${nat0.disableAssistedAddrs ? 'open' : ''}>
+          <summary class="text-sm text-zinc-300 cursor-pointer">NAT Traversal</summary>
+          <div class="mt-3">
+            <div class="text-xs text-zinc-400 mb-1.5">Disable Assisted Addresses</div>
+            ${toggle('disableAssistedAddrs', nat0.disableAssistedAddrs)}
+            <p class="text-[11px] text-zinc-500 mt-1">Chỉ dùng địa chỉ public do STUN phát hiện (bỏ qua địa chỉ mạng nội bộ hỗ trợ).</p>
+          </div>
+        </details>
+      </div>
+
       <details class="rounded-lg border border-zinc-800 p-3">
         <summary class="text-sm text-zinc-300 cursor-pointer">Advanced (JSON)</summary>
         <textarea name="advanced" spellcheck="false" class="w-full h-24 mt-3 rounded-lg bg-zinc-950 border border-zinc-800 p-3 font-mono text-xs focus:border-brand-500 focus:outline-none"></textarea>
@@ -155,6 +197,12 @@ function openVisitorForm(nodeId, mode, existingDef) {
     title: editing ? 'Sửa visitor: ' + existingDef.name : 'New Visitor', body: bodyHtml, footer, size: 'lg',
     onMount(rootEl) {
       const form = rootEl.querySelector('#visitor-form');
+      // Đổi Type -> ẩn/hiện khối P2P và field Fallback Timeout tương ứng.
+      form.elements.type.addEventListener('change', () => {
+        const t = form.elements.type.value;
+        rootEl.querySelector('#p2p-options').classList.toggle('hidden', !isP2P(t));
+        rootEl.querySelector('#fallback-field').classList.toggle('hidden', !hasFallback(t));
+      });
       rootEl.querySelector('#visitor-save').addEventListener('click', async () => {
         const errBox = rootEl.querySelector('#visitor-error');
         errBox.classList.add('hidden');
@@ -189,6 +237,18 @@ function buildVisitorDefinition(form) {
   if (form.elements.useEncryption?.checked) transport.useEncryption = true;
   if (form.elements.useCompression?.checked) transport.useCompression = true;
   if (Object.keys(transport).length) inner.transport = transport;
+
+  // Tùy chọn P2P (chỉ với visitor xtcp/xudp/xtcp+xudp).
+  if (['xtcp', 'xudp', 'xtcp+xudp'].includes(type)) {
+    if (g('protocol')) inner.protocol = g('protocol');
+    if (form.elements.keepTunnelOpen?.checked) inner.keepTunnelOpen = true;
+    if (g('maxRetriesAnHour')) inner.maxRetriesAnHour = Number(g('maxRetriesAnHour'));
+    if (g('minRetryInterval')) inner.minRetryInterval = Number(g('minRetryInterval'));
+    // fallbackTimeoutMs chỉ hợp lệ cho xtcp & xtcp+xudp (xudp không có field này).
+    if ((type === 'xtcp' || type === 'xtcp+xudp') && g('fallbackTimeoutMs')) inner.fallbackTimeoutMs = Number(g('fallbackTimeoutMs'));
+    if (form.elements.disableAssistedAddrs?.checked) inner.natTraversal = { disableAssistedAddrs: true };
+  }
+
   inner.enabled = form.elements.enabled ? form.elements.enabled.checked : true;
   const adv = g('advanced');
   if (adv) {

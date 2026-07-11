@@ -16,6 +16,13 @@ async function loadInstance(req, res) {
 export async function overview(req, res, next) {
   const instance = await loadInstance(req, res);
   if (!instance) return;
+  // Instance đã tắt: không gọi FRP API, trả trạng thái "disabled".
+  if (instance.enabled === false) {
+    return res.json({
+      instance: { id: instance.id, name: instance.name, role: instance.role, baseUrl: instance.baseUrl },
+      role: instance.role, reachable: false, disabled: true, error: 'Instance đã tắt.',
+    });
+  }
   try {
     const data =
       instance.role === 'frps'
@@ -44,6 +51,10 @@ export async function overviewAll(req, res, next) {
     const list = (await storage.listInstances()).filter((meta) => canInstanceAction(req.auth, meta, 'monitor'));
     const results = await Promise.all(
       list.map(async (meta) => {
+        // Bỏ qua instance đã tắt (không gọi API), đánh dấu disabled cho dashboard.
+        if (meta.enabled === false) {
+          return { id: meta.id, name: meta.name, role: meta.role, group: meta.group, baseUrl: meta.baseUrl, reachable: false, disabled: true };
+        }
         const instance = await storage.getInstanceWithSecret(meta.id);
         try {
           const data =
