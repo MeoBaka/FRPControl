@@ -50,6 +50,10 @@ export async function update(req, res, next) {
   try {
     const item = await storage.updateInstance(req.params.id, req.body || {});
     if (!item) return res.status(404).json({ error: 'Không tìm thấy instance.' });
+    // Audit rõ hành động bật/tắt (khi payload chỉ đổi enabled).
+    if (req.body && req.body.enabled !== undefined) {
+      req._auditDetail = req.body.enabled ? 'bật instance' : 'tắt instance';
+    }
     res.json({ instance: item });
   } catch (err) {
     next(err);

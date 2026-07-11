@@ -1,7 +1,13 @@
 /* Node Proxies — 1 node được chọn: tab Status (ảnh 6) + tab Store (CRUD, form ảnh 7). */
 window.Pages = window.Pages || {};
 
-const PROXY_TYPES = ['tcp', 'udp', 'http', 'https', 'tcpmux', 'stcp', 'sudp', 'xtcp'];
+// Danh sách type khớp CHÍNH XÁC admin API của frpc (client/http/model/proxy_definition.go → IsProxyType).
+// tcp+udp / stcp+sudp / xtcp+xudp là type THẬT: mỗi cái là MỘT proxy phục vụ cả TCP lẫn UDP
+// (có localPortUDP riêng). Admin API KHÔNG hỗ trợ "http+https" nên không đưa vào.
+const PROXY_TYPES = ['tcp', 'udp', 'http', 'https', 'tcpmux', 'stcp', 'sudp', 'xtcp', 'xudp', 'tcp+udp', 'stcp+sudp', 'xtcp+xudp'];
+// Type có ở frp GỐC/cũ (vd v0.69.1). Node có frpVariant='standard' chỉ được dùng nhóm này.
+const STANDARD_PROXY_TYPES = ['tcp', 'udp', 'http', 'https', 'tcpmux', 'stcp', 'sudp', 'xtcp'];
+const proxyTypesFor = (node) => (node && node.frpVariant === 'standard' ? STANDARD_PROXY_TYPES : PROXY_TYPES);
 
 // Giải thích ngắn cho từng loại proxy (hiện dưới ô Type trong form)
 const PROXY_TYPE_INFO = {
@@ -13,6 +19,10 @@ const PROXY_TYPE_INFO = {
   stcp: { icon: 'fa-user-shield', title: 'STCP — TCP bảo mật (Secret)', desc: 'KHÔNG mở cổng public trên frps. Chỉ ai có <b>visitor</b> cùng tên + cùng <b>Secret Key</b> mới kết nối được. An toàn hơn TCP.' },
   sudp: { icon: 'fa-user-shield', title: 'SUDP — UDP bảo mật (Secret)', desc: 'Như STCP nhưng cho giao thức UDP.' },
   xtcp: { icon: 'fa-bolt', title: 'XTCP — kết nối P2P trực tiếp', desc: 'Bắt tay qua frps rồi 2 máy nối <b>trực tiếp P2P</b> (NAT traversal) → nhanh, giảm tải server. Cần visitor + Secret Key; có thể fallback về STCP nếu P2P thất bại.' },
+  xudp: { icon: 'fa-bolt', title: 'XUDP — P2P trực tiếp (UDP)', desc: 'Như XTCP nhưng cho giao thức UDP: 2 máy nối <b>trực tiếp P2P</b> qua NAT traversal. Cần visitor + Secret Key.' },
+  'tcp+udp': { icon: 'fa-clone', title: 'TCP+UDP — một proxy, cả TCP lẫn UDP', desc: 'MỘT proxy mở <b>Remote Port</b> cho cả TCP và UDP. <b>Local Port UDP</b> = cổng UDP của dịch vụ local (để trống = dùng Local Port). Hợp dịch vụ nghe cả 2 giao thức (DNS, game…).' },
+  'stcp+sudp': { icon: 'fa-user-shield', title: 'STCP+SUDP — bảo mật cả TCP lẫn UDP', desc: 'MỘT proxy bảo mật (Secret Key) phục vụ cả TCP và UDP qua visitor, không mở cổng public. <b>Local Port UDP</b> = cổng UDP local (để trống = dùng Local Port).' },
+  'xtcp+xudp': { icon: 'fa-bolt', title: 'XTCP+XUDP — P2P cả TCP lẫn UDP (1 hole)', desc: 'MỘT proxy P2P phục vụ <b>đồng thời TCP và UDP</b> qua cùng một NAT hole. Cần Secret Key; <b>Local Port UDP</b> = cổng UDP local (để trống = dùng Local Port).' },
 };
 function proxyTypeNote(type) {
   const i = PROXY_TYPE_INFO[type];
@@ -56,8 +66,8 @@ Pages['nodes/proxies'] = {
   async render(root) {
     App.setToolbar(UI.btn('<i class="fa-solid fa-rotate-right"></i>', { size: 'sm', attrs: 'id="refresh"' }),
       (el) => el.querySelector('#refresh')?.addEventListener('click', () => App.rerender()));
-    const nodes = Store.nodes();
-    if (!nodes.length) { root.innerHTML = `<div class="p-6">${UI.errorBox('Chưa có node nào.')}</div>`; return; }
+    const nodes = Store.activeNodes();
+    if (!nodes.length) { root.innerHTML = `<div class="p-6">${UI.errorBox('Chưa có node nào đang bật.', 'Tất cả node đã tắt — bật lại ở trang Nodes.')}</div>`; return; }
     const node = Store.selectedNode();
 
     root.innerHTML = `<div class="p-6">
@@ -141,7 +151,10 @@ async function renderProxies(body, node) {
     return `<button type="button" data-toggle="${F.escapeHtml(p.name)}" role="switch" aria-checked="${on}" title="${on ? 'Đang bật — bấm để tắt' : 'Đang tắt — bấm để bật'}" class="align-middle relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${on ? 'bg-brand-600' : 'bg-zinc-600'}"><span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${on ? 'translate-x-4' : 'translate-x-1'}"></span></button>`;
   };
 
-  const TYPES = ['ALL', 'TCP', 'UDP', 'HTTP', 'HTTPS', 'TCPMUX', 'STCP', 'XTCP', 'SUDP'];
+  // Type cho phép theo phiên bản frp của node (ẩn type mở rộng nếu node chạy bản chuẩn/cũ).
+  const allowedTypes = proxyTypesFor(node);
+  const extended = allowedTypes === PROXY_TYPES;
+  const TYPES = ['ALL', ...(extended ? PROXY_TYPES : STANDARD_PROXY_TYPES).map((t) => t.toUpperCase())];
   // Được điều hướng từ Provider Proxies (click tên) -> lọc sẵn theo tên/port proxy.
   const preSearch = sessionStorage.getItem('node.proxysearch') || '';
   if (preSearch) sessionStorage.removeItem('node.proxysearch');
@@ -216,8 +229,8 @@ async function renderProxies(body, node) {
   body.querySelector('#f-source').addEventListener('change', (e) => { state.source = e.target.value; draw(); });
   body.querySelector('#types').addEventListener('click', (e) => { const b = e.target.closest('[data-type]'); if (!b) return; state.type = b.dataset.type; body.querySelector('#types').innerHTML = typeHtml(); draw(); });
   body.querySelector('#chips').addEventListener('click', (e) => { const b = e.target.closest('[data-status]'); if (!b) return; state.status = b.dataset.status; body.querySelector('#chips').innerHTML = chipsHtml(); draw(); });
-  body.querySelector('#add-proxy')?.addEventListener('click', () => openProxyForm(node.id, 'create'));
-  body.querySelector('#add-proxy-empty')?.addEventListener('click', () => openProxyForm(node.id, 'create'));
+  body.querySelector('#add-proxy')?.addEventListener('click', () => openProxyForm(node.id, 'create', null, allowedTypes));
+  body.querySelector('#add-proxy-empty')?.addEventListener('click', () => openProxyForm(node.id, 'create', null, allowedTypes));
 
   body.addEventListener('click', async (e) => {
     const tog = e.target.closest('[data-toggle]');
@@ -239,7 +252,7 @@ async function renderProxies(body, node) {
       return;
     }
     const edit = e.target.closest('[data-edit]');
-    if (edit) { try { const def = await API.getStoreProxy(node.id, edit.dataset.edit); openProxyForm(node.id, 'edit', def); } catch (err) { UI.toast('Không lấy được: ' + err.message, 'error'); } return; }
+    if (edit) { try { const def = await API.getStoreProxy(node.id, edit.dataset.edit); openProxyForm(node.id, 'edit', def, allowedTypes); } catch (err) { UI.toast('Không lấy được: ' + err.message, 'error'); } return; }
     const del = e.target.closest('[data-del]');
     if (del) { if (!confirm(`Xóa proxy "${del.dataset.del}" khỏi store?`)) return; try { await API.deleteStoreProxy(node.id, del.dataset.del); UI.toast('Đã xóa.', 'success'); App.rerender(); } catch (err) { UI.toast('Xóa lỗi: ' + err.message, 'error'); } }
   });
@@ -248,7 +261,7 @@ async function renderProxies(body, node) {
   const openName = sessionStorage.getItem('open.storeProxy');
   if (openName) {
     sessionStorage.removeItem('open.storeProxy');
-    try { const def = await API.getStoreProxy(node.id, openName); openProxyForm(node.id, 'edit', def); }
+    try { const def = await API.getStoreProxy(node.id, openName); openProxyForm(node.id, 'edit', def, allowedTypes); }
     catch (err) {
       if (err.data?.upstreamStatus === 404 || /404/.test(err.message)) UI.toast(`Proxy "${openName}" là config tĩnh (không nằm trong store).`, 'info');
       else UI.toast('Không mở được proxy: ' + err.message, 'error');
@@ -257,9 +270,12 @@ async function renderProxies(body, node) {
 }
 
 // ---------------- Form thêm/sửa proxy (ảnh 7) ----------------
-function openProxyForm(nodeId, mode, existingDef) {
+function openProxyForm(nodeId, mode, existingDef, allowedTypes = PROXY_TYPES) {
   const F = Fmt;
   const editing = mode === 'edit';
+  // Khi sửa proxy có type không nằm trong danh sách cho phép (vd node đổi sang bản chuẩn) vẫn cho hiển thị.
+  const typeOptions = editing && existingDef && !allowedTypes.includes(existingDef.type)
+    ? [existingDef.type, ...allowedTypes] : allowedTypes;
   const type0 = editing ? existingDef.type : 'tcp';
   const inner0 = editing ? (existingDef[existingDef.type] || {}) : {};
   const transport0 = inner0.transport || {};
@@ -269,6 +285,9 @@ function openProxyForm(nodeId, mode, existingDef) {
   const headerItems0 = (hc0.httpHeaders || []).map((h) => [h.name || '', h.value || '']);
   const metaItems0 = Object.entries(inner0.metadatas || {});
   const annItems0 = Object.entries(inner0.annotations || {});
+  const reqHeaderItems0 = Object.entries((inner0.requestHeaders || {}).set || {});
+  const resHeaderItems0 = Object.entries((inner0.responseHeaders || {}).set || {});
+  const nat0 = inner0.natTraversal || {};
   const enable0 = editing ? inner0.enabled !== false : true; // mặc định bật
   const plugin0 = inner0.plugin || {};
   const backendMode0 = (plugin0 && plugin0.type) ? 'plugin' : 'direct';
@@ -295,16 +314,25 @@ function openProxyForm(nodeId, mode, existingDef) {
   };
 
   // Field "phơi ra" phía server theo từng loại (KHÔNG gồm backend local — xem Backend Mode).
+  const localPortUdpField = (inner) => input('Local Port UDP', 'localPortUDP', inner.localPortUDP ?? '', { type: 'number', ph: 'để trống = dùng Local Port', full: true });
   const typeFields = (type, inner) => {
     if (['tcp', 'udp'].includes(type))
       return input('Remote Port', 'remotePort', inner.remotePort ?? '', { type: 'number', ph: '0 = ngẫu nhiên' });
+    if (type === 'tcp+udp')
+      return input('Remote Port', 'remotePort', inner.remotePort ?? '', { type: 'number', ph: '0 = ngẫu nhiên' }) +
+        localPortUdpField(inner);
     if (['http', 'https'].includes(type))
       return input(`Custom Domains (cách nhau dấu phẩy) ${UI.help('custom-domains')}`, 'customDomains', (inner.customDomains || []).join(','), { full: true }) +
         input('Subdomain', 'subdomain', inner.subdomain || '');
     if (type === 'tcpmux')
       return input(`Custom Domains ${UI.help('custom-domains')}`, 'customDomains', (inner.customDomains || []).join(','), { full: true }) +
         input('Multiplexer', 'multiplexer', inner.multiplexer || 'httpconnect');
-    return input('Secret Key', 'secretKey', inner.secretKey || '', { full: true }); // stcp/sudp/xtcp
+    // Nhóm bảo mật/P2P: stcp, sudp, xtcp, xudp, stcp+sudp, xtcp+xudp → Secret Key + Allow Users.
+    const secret = input('Secret Key', 'secretKey', inner.secretKey || '', { full: true }) +
+      input('Allow Users (cách nhau dấu phẩy)', 'allowUsers', (inner.allowUsers || []).join(','), { full: true, ph: '* = mọi user · để trống = chỉ cùng user' });
+    if (type === 'stcp+sudp' || type === 'xtcp+xudp')
+      return secret + localPortUdpField(inner);
+    return secret; // stcp/sudp/xtcp/xudp
   };
   // Field cấu hình cho 1 plugin (Backend Mode = Plugin).
   const pluginFields = (pt) => {
@@ -328,7 +356,7 @@ function openProxyForm(nodeId, mode, existingDef) {
         <div>
           <label class="block text-xs text-zinc-400 mb-1">Type * ${UI.help('proxy-types')}</label>
           <select name="type" ${editing ? 'disabled' : ''} class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none ${editing ? 'text-zinc-500 cursor-not-allowed' : ''}">
-            ${PROXY_TYPES.map((t) => `<option value="${t}" ${t === type0 ? 'selected' : ''}>${t.toUpperCase()}</option>`).join('')}
+            ${typeOptions.map((t) => `<option value="${t}" ${t === type0 ? 'selected' : ''}>${t.toUpperCase()}</option>`).join('')}
           </select>
         </div>
         <div>
@@ -341,6 +369,36 @@ function openProxyForm(nodeId, mode, existingDef) {
       </div>
       <div id="type-note">${proxyTypeNote(type0)}</div>
       <div id="type-fields" class="grid grid-cols-2 gap-3">${typeFields(type0, inner0)}</div>
+
+      <div id="http-options" class="${['http', 'tcpmux'].includes(type0) ? '' : 'hidden'} rounded-lg border border-zinc-800 p-3 space-y-3">
+        <div class="text-sm text-zinc-300">HTTP Options</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="http-only col-span-2 ${type0 === 'http' ? '' : 'hidden'}">${input('Locations (path, cách nhau dấu phẩy)', 'locations', (inner0.locations || []).join(','), { ph: '/  ·  /api  ·  /static' })}</div>
+          ${input('HTTP User', 'httpUser', inner0.httpUser || '', { ph: 'Basic Auth user' })}
+          ${input('HTTP Password', 'httpPassword', inner0.httpPassword || '', { type: 'password', ph: 'Basic Auth password' })}
+          <div class="http-only ${type0 === 'http' ? '' : 'hidden'}">${input('Host Header Rewrite', 'hostHeaderRewrite', inner0.hostHeaderRewrite || '', { ph: 'vd: example.com' })}</div>
+          ${input('Route By HTTP User', 'routeByHTTPUser', inner0.routeByHTTPUser || '', { ph: '* = mọi user' })}
+        </div>
+        <div class="http-only ${type0 === 'http' ? '' : 'hidden'} space-y-3">
+          <div>
+            <div class="text-xs text-zinc-400 mb-1.5">Request Headers <span class="text-zinc-600">— set header gửi tới dịch vụ local</span></div>
+            ${kvBlock('requestHeaders', reqHeaderItems0, 'Header', 'Value')}
+          </div>
+          <div>
+            <div class="text-xs text-zinc-400 mb-1.5">Response Headers <span class="text-zinc-600">— set header trả về cho client</span></div>
+            ${kvBlock('responseHeaders', resHeaderItems0, 'Header', 'Value')}
+          </div>
+        </div>
+      </div>
+
+      <div id="nat-options" class="${['xtcp', 'xudp', 'xtcp+xudp'].includes(type0) ? '' : 'hidden'} rounded-lg border border-zinc-800 p-3">
+        <div class="text-sm text-zinc-300 mb-2">NAT Traversal</div>
+        <label class="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+          <input type="checkbox" name="disableAssistedAddrs" ${nat0.disableAssistedAddrs ? 'checked' : ''} class="rounded bg-zinc-800 border-zinc-700"/>
+          Disable Assisted Addresses
+        </label>
+        <p class="text-[11px] text-zinc-500 mt-1">Chỉ dùng địa chỉ public do STUN phát hiện (bỏ qua địa chỉ mạng nội bộ hỗ trợ P2P).</p>
+      </div>
 
       <div class="rounded-lg border border-zinc-800 p-3">
         <div class="text-sm text-zinc-300 mb-2">Backend Mode</div>
@@ -471,6 +529,11 @@ function openProxyForm(nodeId, mode, existingDef) {
         const t = form.elements.type.value;
         rootEl.querySelector('#type-fields').innerHTML = typeFields(t, {});
         rootEl.querySelector('#type-note').innerHTML = proxyTypeNote(t);
+        // HTTP Options: hiện với http & tcpmux; field http-only chỉ với http.
+        rootEl.querySelector('#http-options').classList.toggle('hidden', !['http', 'tcpmux'].includes(t));
+        rootEl.querySelectorAll('#http-options .http-only').forEach((el) => el.classList.toggle('hidden', t !== 'http'));
+        // NAT Traversal: chỉ xtcp/xudp/xtcp+xudp.
+        rootEl.querySelector('#nat-options').classList.toggle('hidden', !['xtcp', 'xudp', 'xtcp+xudp'].includes(t));
       });
       // Backend Mode: Direct <-> Plugin
       rootEl.querySelectorAll('[name="backendMode"]').forEach((r) => r.addEventListener('change', () => {
@@ -534,13 +597,31 @@ function buildProxyDefinition(form) {
   const inner = { name, type };
   const setNum = (n) => { const v = g(n); if (v !== '') inner[n] = Number(v); };
   const setStr = (n) => { const v = g(n); if (v) inner[n] = v; };
+  const setArr = (n) => { const v = g(n); if (v) inner[n] = v.split(',').map((s) => s.trim()).filter(Boolean); };
   const setDomains = () => { const v = g('customDomains'); if (v) inner.customDomains = v.split(',').map((s) => s.trim()).filter(Boolean); };
 
   // Field phơi ra phía server (không gồm backend local — xử lý ở Backend Mode).
   if (['tcp', 'udp'].includes(type)) { setNum('remotePort'); }
+  else if (type === 'tcp+udp') { setNum('remotePort'); setNum('localPortUDP'); }
   else if (['http', 'https'].includes(type)) { setDomains(); setStr('subdomain'); }
   else if (type === 'tcpmux') { setDomains(); setStr('multiplexer'); }
-  else { setStr('secretKey'); }
+  else { // stcp/sudp/xtcp/xudp/stcp+sudp/xtcp+xudp
+    setStr('secretKey'); setArr('allowUsers');
+    if (type === 'stcp+sudp' || type === 'xtcp+xudp') setNum('localPortUDP');
+  }
+
+  // HTTP Options: httpUser/httpPassword/routeByHTTPUser cho http & tcpmux; còn lại chỉ http.
+  if (type === 'http' || type === 'tcpmux') { setStr('httpUser'); setStr('httpPassword'); setStr('routeByHTTPUser'); }
+  if (type === 'http') {
+    setArr('locations'); setStr('hostHeaderRewrite');
+    const reqH = kvToObject('requestHeaders'); if (Object.keys(reqH).length) inner.requestHeaders = { set: reqH };
+    const resH = kvToObject('responseHeaders'); if (Object.keys(resH).length) inner.responseHeaders = { set: resH };
+  }
+
+  // NAT Traversal (chỉ proxy P2P).
+  if (['xtcp', 'xudp', 'xtcp+xudp'].includes(type) && form.elements.disableAssistedAddrs?.checked) {
+    inner.natTraversal = { disableAssistedAddrs: true };
+  }
 
   // Backend Mode: Direct (localIP/localPort) | Plugin (inner.plugin).
   const backendMode = form.elements.backendMode ? form.elements.backendMode.value : 'direct';

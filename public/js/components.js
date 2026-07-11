@@ -101,7 +101,7 @@ window.UI = (() => {
   // ---------------- Selector provider/node (top toolbar) ----------------
   // Trả về HTML <select>; tự wire sau khi render qua wireSelector().
   function selector(kind) {
-    const items = kind === 'provider' ? Store.providers() : Store.nodes();
+    const items = kind === 'provider' ? Store.activeProviders() : Store.activeNodes();
     const selId = kind === 'provider' ? Store.state.selectedProviderId : Store.state.selectedNodeId;
     if (!items.length) return '';
     const opts = items.map((i) => `<option value="${i.id}" ${i.id === selId ? 'selected' : ''}>${escapeHtml(i.name)} — ${escapeHtml(i.baseUrl)}</option>`).join('');
@@ -120,7 +120,7 @@ window.UI = (() => {
 
   // Ô chọn provider/node kèm nhãn, đặt trong khu vực lọc. Nhớ gọi wireSelector(container) sau khi render.
   function selectorBar(kind) {
-    const items = kind === 'provider' ? Store.providers() : Store.nodes();
+    const items = kind === 'provider' ? Store.activeProviders() : Store.activeNodes();
     const selId = kind === 'provider' ? Store.state.selectedProviderId : Store.state.selectedNodeId;
     const label = kind === 'provider' ? 'Provider' : 'Node';
     const opts = items.map((i) => `<option value="${i.id}" ${i.id === selId ? 'selected' : ''}>${escapeHtml(i.name)} — ${escapeHtml(i.baseUrl)}</option>`).join('');
@@ -242,6 +242,14 @@ window.UI = (() => {
             <input name="tls" type="checkbox" ${inst?.tls ? 'checked' : ''} class="rounded bg-zinc-800 border-zinc-700" />
             Dùng HTTPS + cho phép chứng chỉ self-signed
           </label>
+          <div class="col-span-2">
+            <label class="block text-xs text-zinc-400 mb-1">Phiên bản frp (type hỗ trợ)</label>
+            <select name="frpVariant" class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">
+              <option value="extended" ${inst?.frpVariant !== 'standard' ? 'selected' : ''}>Meobaka fork — đầy đủ type mới (xudp, tcp+udp, stcp+sudp, xtcp+xudp)</option>
+              <option value="standard" ${inst?.frpVariant === 'standard' ? 'selected' : ''}>frp chuẩn / cũ — chỉ type gốc</option>
+            </select>
+            <p class="text-[11px] text-zinc-500 mt-1">Chọn "chuẩn / cũ" nếu chạy frp gốc (vd v0.69.1) — ẩn các type mở rộng để tránh lỗi "invalid proxy type".</p>
+          </div>
         </div>
         <div id="inst-test-result" class="hidden rounded-lg px-3 py-2 text-sm"></div>
       </form>`;
@@ -259,7 +267,7 @@ window.UI = (() => {
         const form = root.querySelector('#instance-form');
         const readForm = () => {
           const f = form.elements;
-          const payload = { name: f.name.value.trim(), role, group: f.group.value.trim(), baseUrl: f.baseUrl.value.trim(), user: f.user.value, tls: f.tls.checked };
+          const payload = { name: f.name.value.trim(), role, group: f.group.value.trim(), baseUrl: f.baseUrl.value.trim(), user: f.user.value, tls: f.tls.checked, frpVariant: f.frpVariant.value };
           if (f.password.value !== '') payload.password = f.password.value;
           return payload;
         };
@@ -298,6 +306,27 @@ window.UI = (() => {
         });
       },
     });
+  }
+
+  // Switch bật/tắt 1 instance (Node/Provider). enabled=false → không poll, ẩn khỏi selector.
+  function instanceSwitch(inst) {
+    const on = inst.enabled !== false;
+    return `<button type="button" data-toggle-enabled="${inst.id}" role="switch" aria-checked="${on}"
+      title="${on ? 'Đang bật — bấm để tắt' : 'Đang tắt — bấm để bật'}"
+      class="align-middle relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${on ? 'bg-brand-600' : 'bg-zinc-600'}">
+      <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${on ? 'translate-x-4' : 'translate-x-1'}"></span>
+    </button>`;
+  }
+  async function toggleInstanceEnabled(id) {
+    const inst = Store.getInstance(id);
+    if (!inst) return;
+    const next = inst.enabled === false; // đang tắt -> bật, đang bật -> tắt
+    try {
+      await API.updateInstance(id, { enabled: next });
+      toast(next ? `Đã bật "${inst.name}".` : `Đã tắt "${inst.name}".`, 'success');
+      await Store.loadInstances();
+      App.rerender();
+    } catch (err) { toast('Lỗi: ' + err.message, 'error'); }
   }
 
   async function deleteInstance(inst) {
@@ -437,7 +466,7 @@ window.UI = (() => {
     spinner, emptyState, emptyNote, errorBox, needSelection,
     statCard, card, btn, table, paginatedTable,
     selector, selectorBar, wireSelector,
-    openInstanceModal, deleteInstance,
+    openInstanceModal, deleteInstance, instanceSwitch, toggleInstanceEnabled,
     help, HELP,
   };
 })();

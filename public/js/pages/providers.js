@@ -27,31 +27,40 @@ Pages['providers'] = {
     }
 
     const F = Fmt;
-    const HEADERS = ['', 'Tên', 'Nhóm', 'URL', 'Trạng thái', 'Phiên bản', 'Proxy', 'Network', { label: 'Thao tác', align: 'right' }];
+    const HEADERS = ['', { label: 'Bật', align: 'center' }, 'Tên', 'Nhóm', 'URL', 'Trạng thái', 'Phiên bản', 'Proxy', 'Network', { label: 'Thao tác', align: 'right' }];
 
     // Nội dung 1 dòng theo trạng thái overview: undefined = đang tải, {reachable,...} = đã xong.
     const rowInner = (p, ov) => {
-      const loading = ov === undefined;
-      const reachable = !!(ov && ov.reachable);
+      const disabled = p.enabled === false;
+      const loading = !disabled && ov === undefined;
+      const reachable = !disabled && !!(ov && ov.reachable);
       const s = (ov && ov.summary) || {};
-      const dot = loading
-        ? '<span class="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>'
-        : F.reachDot(reachable);
-      const statusCell = loading
-        ? '<span class="inline-flex items-center gap-1.5 text-[11px] text-amber-400"><span class="inline-block w-3 h-3 border-2 border-amber-500/40 border-t-amber-400 rounded-full animate-spin"></span> Đang kết nối…</span>'
-        : (reachable
-          ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Online</span>'
-          : '<span class="text-[11px] px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30">Offline</span>');
-      const version = loading ? '<span class="text-zinc-600">…</span>' : (reachable ? `<span class="text-zinc-300">v${F.escapeHtml(s.version || '?')}</span>` : '—');
-      const proxy = loading ? '<span class="text-zinc-600">…</span>' : (reachable
+      const dot = disabled
+        ? '<span class="inline-block w-2 h-2 rounded-full bg-zinc-600"></span>'
+        : (loading
+          ? '<span class="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>'
+          : F.reachDot(reachable));
+      const switchCell = canUpdate
+        ? UI.instanceSwitch(p)
+        : `<span class="text-[11px] px-2 py-0.5 rounded-full ${disabled ? 'bg-zinc-600/20 text-zinc-400' : 'bg-emerald-500/15 text-emerald-400'}">${disabled ? 'Tắt' : 'Bật'}</span>`;
+      const statusCell = disabled
+        ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-zinc-600/20 text-zinc-400 border border-zinc-600/40">Đã tắt</span>'
+        : (loading
+          ? '<span class="inline-flex items-center gap-1.5 text-[11px] text-amber-400"><span class="inline-block w-3 h-3 border-2 border-amber-500/40 border-t-amber-400 rounded-full animate-spin"></span> Đang kết nối…</span>'
+          : (reachable
+            ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Online</span>'
+            : '<span class="text-[11px] px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30">Offline</span>'));
+      const version = disabled ? '<span class="text-zinc-600">—</span>' : (loading ? '<span class="text-zinc-600">…</span>' : (reachable ? `<span class="text-zinc-300">v${F.escapeHtml(s.version || '?')}</span>` : '—'));
+      const proxy = disabled ? '<span class="text-zinc-600">—</span>' : (loading ? '<span class="text-zinc-600">…</span>' : (reachable
         ? `<button data-goto-proxies="${p.id}" class="text-brand-400 hover:text-brand-300 hover:underline">${s.onlineProxies}/${s.totalProxies}</button> <span class="text-xs text-zinc-500">· ${s.clientCounts ?? 0} client</span>`
-        : '—');
-      const network = loading ? '<span class="text-zinc-600">…</span>' : (reachable
+        : '—'));
+      const network = disabled ? '<span class="text-zinc-600">—</span>' : (loading ? '<span class="text-zinc-600">…</span>' : (reachable
         ? `<span class="text-xs"><i class="fa-solid fa-arrow-down text-emerald-400"></i> ${F.formatBytes(s.totalTrafficIn)} &nbsp;<i class="fa-solid fa-arrow-up text-sky-400"></i> ${F.formatBytes(s.totalTrafficOut)}</span>`
-        : `<span class="text-xs text-red-400">${F.escapeHtml((ov && ov.error) || 'Không kết nối được')}</span>`);
+        : `<span class="inline-flex items-center gap-1 text-red-400 cursor-help" title="${F.escapeHtml((ov && ov.error) || 'Không kết nối được')}"><i class="fa-solid fa-circle-exclamation"></i><span class="text-xs">Lỗi</span></span>`));
       return `
         <td class="px-3 py-2">${dot}</td>
-        <td class="px-3 py-2 font-medium">${F.escapeHtml(p.name)}</td>
+        <td class="px-3 py-2 text-center">${switchCell}</td>
+        <td class="px-3 py-2 font-medium ${disabled ? 'text-zinc-500' : ''}">${F.escapeHtml(p.name)}</td>
         <td class="px-3 py-2 text-zinc-400">${p.group ? F.escapeHtml(p.group) : '—'}</td>
         <td class="px-3 py-2 text-xs text-zinc-400 font-mono">${F.escapeHtml(p.baseUrl)}</td>
         <td class="px-3 py-2">${statusCell}</td>
@@ -74,6 +83,7 @@ Pages['providers'] = {
     draw();
     // Cập nhật in-place khi dòng đang hiển thị, fallback vẽ lại (đổi trang) đều đúng nhờ results[].
     providers.forEach((p) => {
+      if (p.enabled === false) return; // provider đã tắt: không gọi API
       const apply = (ov) => {
         results[p.id] = ov;
         const tr = root.querySelector(`[data-ovid="${p.id}"]`);
@@ -83,6 +93,8 @@ Pages['providers'] = {
     });
 
     root.addEventListener('click', (e) => {
+      const tg = e.target.closest('[data-toggle-enabled]');
+      if (tg) return UI.toggleInstanceEnabled(tg.dataset.toggleEnabled);
       const goto = e.target.closest('[data-goto-proxies]');
       if (goto) { Store.setProvider(goto.dataset.gotoProxies); return App.navigate('#/providers/proxies'); }
       const edit = e.target.closest('[data-edit]'); if (edit) return UI.openInstanceModal('frps', edit.dataset.edit);

@@ -39,7 +39,14 @@ function nowIso() {
 /** Loại bỏ mật khẩu khỏi object trước khi trả về client. */
 function toPublic(instance) {
   const { password, ...rest } = instance;
-  return { ...rest, hasPassword: Boolean(password) };
+  // enabled mặc định = true (instance cũ chưa có field này vẫn coi là đang bật).
+  // frpVariant: 'extended' (fork Meobaka, có type mới) | 'standard' (frp gốc/cũ). Mặc định extended.
+  return {
+    ...rest,
+    enabled: instance.enabled !== false,
+    frpVariant: instance.frpVariant === 'standard' ? 'standard' : 'extended',
+    hasPassword: Boolean(password),
+  };
 }
 
 function validate(payload, { partial = false } = {}) {
@@ -63,6 +70,8 @@ function validate(payload, { partial = false } = {}) {
     out.user = payload.user == null ? '' : String(payload.user);
   }
   if (payload.tls !== undefined) out.tls = Boolean(payload.tls);
+  if (payload.enabled !== undefined) out.enabled = Boolean(payload.enabled);
+  if (payload.frpVariant !== undefined) out.frpVariant = payload.frpVariant === 'standard' ? 'standard' : 'extended';
   if (payload.group !== undefined) out.group = String(payload.group || '').trim();
   if (payload.note !== undefined) out.note = String(payload.note || '');
 
@@ -151,6 +160,8 @@ export async function createInstance(payload) {
     user: value.user ?? '',
     password: encryptSecret(payload.password ?? ''),
     tls: value.tls ?? false,
+    enabled: value.enabled !== false, // mặc định bật
+    frpVariant: value.frpVariant || 'extended', // mặc định fork đầy đủ type
     group: value.group ?? '',
     note: value.note ?? '',
     createdAt: nowIso(),

@@ -7,8 +7,8 @@ Pages['providers/status'] = {
     App.setToolbar(UI.btn('<i class="fa-solid fa-rotate-right"></i>', { size: 'sm', attrs: 'id="refresh"' }),
       (el) => el.querySelector('#refresh')?.addEventListener('click', () => App.rerender()));
 
-    const providers = Store.providers();
-    if (!providers.length) { root.innerHTML = `<div class="p-6">${UI.errorBox('Chưa có provider nào.')}</div>`; return; }
+    const providers = Store.activeProviders();
+    if (!providers.length) { root.innerHTML = `<div class="p-6">${UI.errorBox('Chưa có provider nào đang bật.', 'Tất cả provider đã tắt — bật lại ở trang Providers.')}</div>`; return; }
     const provider = Store.selectedProvider();
 
     const bar = `<div class="flex flex-wrap items-center gap-3 mb-4">${UI.selectorBar('provider')}</div>`;

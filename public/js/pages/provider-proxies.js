@@ -4,7 +4,7 @@ Pages['providers/proxies'] = {
   title: 'Provider Proxies',
   subtitle: 'Toàn bộ proxy đang đăng ký trên FRPS',
   async render(root) {
-    const providers = Store.providers();
+    const providers = Store.activeProviders();
     App.setToolbar(
       UI.btn('<i class="fa-solid fa-rotate-right"></i> Refresh', { size: 'sm', attrs: 'id="refresh"' }) +
       (Store.can('proxies.delete') ? UI.btn('<i class="fa-solid fa-trash-can"></i> Clear Offline', { size: 'sm', variant: 'danger', attrs: 'id="clear-offline"' }) : ''),
@@ -18,7 +18,7 @@ Pages['providers/proxies'] = {
         });
       }
     );
-    if (!providers.length) { root.innerHTML = `<div class="p-6">${UI.errorBox('Chưa có provider nào.')}</div>`; return; }
+    if (!providers.length) { root.innerHTML = `<div class="p-6">${UI.errorBox('Chưa có provider nào đang bật.', 'Tất cả provider đã tắt — bật lại ở trang Providers.')}</div>`; return; }
 
     const F = Fmt;
     const provider = Store.selectedProvider();
@@ -26,7 +26,9 @@ Pages['providers/proxies'] = {
     const reachable = data.reachable;
     const proxies = reachable ? (data.proxies || []) : [];
 
-    const TYPES = ['ALL', 'TCP', 'UDP', 'HTTP', 'HTTPS', 'TCPMUX', 'STCP', 'XTCP', 'SUDP'];
+    const baseTypes = ['ALL', 'TCP', 'UDP', 'HTTP', 'HTTPS', 'TCPMUX', 'STCP', 'XTCP', 'SUDP'];
+    // Ẩn tab type mở rộng nếu provider chạy frp chuẩn/cũ.
+    const TYPES = provider.frpVariant === 'standard' ? baseTypes : [...baseTypes, 'XUDP', 'TCP+UDP', 'STCP+SUDP', 'XTCP+XUDP'];
     const clientIds = [...new Set(proxies.map((p) => p.clientId).filter(Boolean))];
     const statuses = [...new Set(proxies.map((p) => p.status).filter(Boolean))].sort();
     // Được điều hướng từ Status -> lọc sẵn (proxy có kết nối / proxy online)
@@ -99,7 +101,7 @@ Pages['providers/proxies'] = {
       if (np) {
         const name = np.dataset.openNodeProxy;
         sessionStorage.setItem('node.proxysearch', name);
-        const nodes = Store.nodes();
+        const nodes = Store.activeNodes();
         if (nodes.length > 1) {
           np.disabled = true;
           try {

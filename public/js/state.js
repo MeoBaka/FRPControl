@@ -44,18 +44,21 @@ window.Store = (() => {
   async function loadInstances() {
     const { instances } = await API.listInstances();
     state.instances = instances;
-    // Đảm bảo lựa chọn còn hợp lệ, nếu không thì chọn cái đầu tiên.
-    if (!providers().some((p) => p.id === state.selectedProviderId)) {
-      setProvider(providers()[0]?.id || null);
+    // Đảm bảo lựa chọn còn hợp lệ (và đang BẬT), nếu không thì chọn cái đầu tiên đang bật.
+    if (!activeProviders().some((p) => p.id === state.selectedProviderId)) {
+      setProvider(activeProviders()[0]?.id || null);
     }
-    if (!nodes().some((n) => n.id === state.selectedNodeId)) {
-      setNode(nodes()[0]?.id || null);
+    if (!activeNodes().some((n) => n.id === state.selectedNodeId)) {
+      setNode(activeNodes()[0]?.id || null);
     }
     return state.instances;
   }
 
   const providers = () => state.instances.filter((i) => i.role === 'frps');
   const nodes = () => state.instances.filter((i) => i.role === 'frpc');
+  // Chỉ instance đang bật — dùng cho selector/dropdown ở các trang vận hành.
+  const activeProviders = () => providers().filter((p) => p.enabled !== false);
+  const activeNodes = () => nodes().filter((n) => n.enabled !== false);
 
   const getInstance = (id) => state.instances.find((i) => i.id === id) || null;
   const selectedProvider = () => getInstance(state.selectedProviderId);
@@ -88,6 +91,8 @@ window.Store = (() => {
     loadInstances,
     providers,
     nodes,
+    activeProviders,
+    activeNodes,
     getInstance,
     selectedProvider,
     selectedNode,
