@@ -4,10 +4,10 @@ window.Pages = window.Pages || {};
 // Danh sách type khớp CHÍNH XÁC admin API của frpc (client/http/model/proxy_definition.go → IsProxyType).
 // tcp+udp / stcp+sudp / xtcp+xudp là type THẬT: mỗi cái là MỘT proxy phục vụ cả TCP lẫn UDP
 // (có localPortUDP riêng). Admin API KHÔNG hỗ trợ "http+https" nên không đưa vào.
-const PROXY_TYPES = ['tcp', 'udp', 'http', 'https', 'tcpmux', 'stcp', 'sudp', 'xtcp', 'xudp', 'tcp+udp', 'stcp+sudp', 'xtcp+xudp'];
-// Type có ở frp GỐC/cũ (vd v0.69.1). Node có frpVariant='standard' chỉ được dùng nhóm này.
-const STANDARD_PROXY_TYPES = ['tcp', 'udp', 'http', 'https', 'tcpmux', 'stcp', 'sudp', 'xtcp'];
-const proxyTypesFor = (node) => (node && node.frpVariant === 'standard' ? STANDARD_PROXY_TYPES : PROXY_TYPES);
+const PROXY_TYPES = ['tcp', 'udp', 'http', 'https', 'tcpmux', 'stcp', 'sudp', 'xtcp', 'xudp', 'tcp+udp', 'stcp+sudp', 'xtcp+xudp', 'mc', 'pe'];
+// Type mở rộng CHỈ có ở fork Meobaka (v1.3.x+); frp gốc/cũ (vd v0.69.1) sẽ báo "invalid proxy type".
+// KHÔNG ẩn type — chỉ hiện note cảnh báo (đỏ nếu node đặt là bản chuẩn, vàng nếu chưa rõ).
+const EXTENDED_PROXY_TYPES = ['xudp', 'tcp+udp', 'stcp+sudp', 'xtcp+xudp', 'mc', 'pe'];
 
 // Giải thích ngắn cho từng loại proxy (hiện dưới ô Type trong form)
 const PROXY_TYPE_INFO = {
@@ -23,13 +23,25 @@ const PROXY_TYPE_INFO = {
   'tcp+udp': { icon: 'fa-clone', title: 'TCP+UDP — một proxy, cả TCP lẫn UDP', desc: 'MỘT proxy mở <b>Remote Port</b> cho cả TCP và UDP. <b>Local Port UDP</b> = cổng UDP của dịch vụ local (để trống = dùng Local Port). Hợp dịch vụ nghe cả 2 giao thức (DNS, game…).' },
   'stcp+sudp': { icon: 'fa-user-shield', title: 'STCP+SUDP — bảo mật cả TCP lẫn UDP', desc: 'MỘT proxy bảo mật (Secret Key) phục vụ cả TCP và UDP qua visitor, không mở cổng public. <b>Local Port UDP</b> = cổng UDP local (để trống = dùng Local Port).' },
   'xtcp+xudp': { icon: 'fa-bolt', title: 'XTCP+XUDP — P2P cả TCP lẫn UDP (1 hole)', desc: 'MỘT proxy P2P phục vụ <b>đồng thời TCP và UDP</b> qua cùng một NAT hole. Cần Secret Key; <b>Local Port UDP</b> = cổng UDP local (để trống = dùng Local Port).' },
+  mc: { icon: 'fa-cube', title: 'MC — Minecraft (Java)', desc: 'frps mở <b>Remote Port</b> công khai cho server Minecraft Java; định tuyến theo <b>hostname handshake</b> (Custom Domains). Nhiều server mc có thể chung 1 Remote Port, phân biệt bằng domain.' },
+  pe: { icon: 'fa-cube', title: 'PE — Minecraft Bedrock (UDP)', desc: 'frps mở <b>Remote Port UDP</b> (vd 19132) cho Bedrock/PE. <b>Forced Hosts</b> map hostname người chơi kết nối → địa chỉ server Bedrock local (ip:port).' },
 };
-function proxyTypeNote(type) {
+// Note cảnh báo yêu cầu phiên bản khi chọn type mở rộng. variant='standard'|'extended' (của node).
+function versionRequireNote(type, variant) {
+  if (!EXTENDED_PROXY_TYPES.includes(type)) return '';
+  const standard = variant === 'standard';
+  const cls = standard ? 'bg-red-900/30 border-red-700/60 text-red-300' : 'bg-amber-900/20 border-amber-700/50 text-amber-300';
+  const msg = standard
+    ? 'Node này đang đặt là <b>frp chuẩn/cũ</b> — type mở rộng <b>sẽ KHÔNG chạy</b> (frpc báo "invalid proxy type"). Cần <b>fork Meobaka v1.3.x+</b>.'
+    : 'Type mở rộng — chỉ chạy trên <b>fork Meobaka (v1.3.x+)</b>. Nếu node chạy frp gốc/cũ (vd v0.69.1) sẽ báo "invalid proxy type".';
+  return `<div class="mt-2 rounded-lg border p-2.5 text-[11px] leading-relaxed ${cls}">${msg}</div>`;
+}
+function proxyTypeNote(type, variant) {
   const i = PROXY_TYPE_INFO[type];
-  if (!i) return '';
-  return `<div class="rounded-lg bg-zinc-800/40 border border-zinc-700/60 p-3 text-[11px] text-zinc-400 leading-relaxed">
+  const base = i ? `<div class="rounded-lg bg-zinc-800/40 border border-zinc-700/60 p-3 text-[11px] text-zinc-400 leading-relaxed">
     <span class="text-zinc-300 font-medium"><i class="fa-solid ${i.icon} text-brand-400"></i> ${i.title}</span> — ${i.desc}
-  </div>`;
+  </div>` : '';
+  return base + versionRequireNote(type, variant);
 }
 
 // Backend Mode = Plugin: các loại plugin của frpc + field cấu hình (khớp pkg/config/v1/plugin).
@@ -151,10 +163,9 @@ async function renderProxies(body, node) {
     return `<button type="button" data-toggle="${F.escapeHtml(p.name)}" role="switch" aria-checked="${on}" title="${on ? 'Đang bật — bấm để tắt' : 'Đang tắt — bấm để bật'}" class="align-middle relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${on ? 'bg-brand-600' : 'bg-zinc-600'}"><span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${on ? 'translate-x-4' : 'translate-x-1'}"></span></button>`;
   };
 
-  // Type cho phép theo phiên bản frp của node (ẩn type mở rộng nếu node chạy bản chuẩn/cũ).
-  const allowedTypes = proxyTypesFor(node);
-  const extended = allowedTypes === PROXY_TYPES;
-  const TYPES = ['ALL', ...(extended ? PROXY_TYPES : STANDARD_PROXY_TYPES).map((t) => t.toUpperCase())];
+  // KHÔNG ẩn type — luôn hiện đủ. Version chỉ ảnh hưởng note trong form.
+  const variant = node.frpVariant || 'extended';
+  const TYPES = ['ALL', ...PROXY_TYPES.map((t) => t.toUpperCase())];
   // Được điều hướng từ Provider Proxies (click tên) -> lọc sẵn theo tên/port proxy.
   const preSearch = sessionStorage.getItem('node.proxysearch') || '';
   if (preSearch) sessionStorage.removeItem('node.proxysearch');
@@ -229,8 +240,8 @@ async function renderProxies(body, node) {
   body.querySelector('#f-source').addEventListener('change', (e) => { state.source = e.target.value; draw(); });
   body.querySelector('#types').addEventListener('click', (e) => { const b = e.target.closest('[data-type]'); if (!b) return; state.type = b.dataset.type; body.querySelector('#types').innerHTML = typeHtml(); draw(); });
   body.querySelector('#chips').addEventListener('click', (e) => { const b = e.target.closest('[data-status]'); if (!b) return; state.status = b.dataset.status; body.querySelector('#chips').innerHTML = chipsHtml(); draw(); });
-  body.querySelector('#add-proxy')?.addEventListener('click', () => openProxyForm(node.id, 'create', null, allowedTypes));
-  body.querySelector('#add-proxy-empty')?.addEventListener('click', () => openProxyForm(node.id, 'create', null, allowedTypes));
+  body.querySelector('#add-proxy')?.addEventListener('click', () => openProxyForm(node.id, 'create', null, variant));
+  body.querySelector('#add-proxy-empty')?.addEventListener('click', () => openProxyForm(node.id, 'create', null, variant));
 
   body.addEventListener('click', async (e) => {
     const tog = e.target.closest('[data-toggle]');
@@ -252,7 +263,7 @@ async function renderProxies(body, node) {
       return;
     }
     const edit = e.target.closest('[data-edit]');
-    if (edit) { try { const def = await API.getStoreProxy(node.id, edit.dataset.edit); openProxyForm(node.id, 'edit', def, allowedTypes); } catch (err) { UI.toast('Không lấy được: ' + err.message, 'error'); } return; }
+    if (edit) { try { const def = await API.getStoreProxy(node.id, edit.dataset.edit); openProxyForm(node.id, 'edit', def, variant); } catch (err) { UI.toast('Không lấy được: ' + err.message, 'error'); } return; }
     const del = e.target.closest('[data-del]');
     if (del) { if (!confirm(`Xóa proxy "${del.dataset.del}" khỏi store?`)) return; try { await API.deleteStoreProxy(node.id, del.dataset.del); UI.toast('Đã xóa.', 'success'); App.rerender(); } catch (err) { UI.toast('Xóa lỗi: ' + err.message, 'error'); } }
   });
@@ -261,7 +272,7 @@ async function renderProxies(body, node) {
   const openName = sessionStorage.getItem('open.storeProxy');
   if (openName) {
     sessionStorage.removeItem('open.storeProxy');
-    try { const def = await API.getStoreProxy(node.id, openName); openProxyForm(node.id, 'edit', def, allowedTypes); }
+    try { const def = await API.getStoreProxy(node.id, openName); openProxyForm(node.id, 'edit', def, variant); }
     catch (err) {
       if (err.data?.upstreamStatus === 404 || /404/.test(err.message)) UI.toast(`Proxy "${openName}" là config tĩnh (không nằm trong store).`, 'info');
       else UI.toast('Không mở được proxy: ' + err.message, 'error');
@@ -270,12 +281,12 @@ async function renderProxies(body, node) {
 }
 
 // ---------------- Form thêm/sửa proxy (ảnh 7) ----------------
-function openProxyForm(nodeId, mode, existingDef, allowedTypes = PROXY_TYPES) {
+function openProxyForm(nodeId, mode, existingDef, variant = 'extended') {
   const F = Fmt;
   const editing = mode === 'edit';
-  // Khi sửa proxy có type không nằm trong danh sách cho phép (vd node đổi sang bản chuẩn) vẫn cho hiển thị.
-  const typeOptions = editing && existingDef && !allowedTypes.includes(existingDef.type)
-    ? [existingDef.type, ...allowedTypes] : allowedTypes;
+  // Luôn hiện đủ mọi type; nếu type đang sửa lạ (không có trong PROXY_TYPES) vẫn thêm để hiển thị.
+  const typeOptions = editing && existingDef && !PROXY_TYPES.includes(existingDef.type)
+    ? [existingDef.type, ...PROXY_TYPES] : PROXY_TYPES;
   const type0 = editing ? existingDef.type : 'tcp';
   const inner0 = editing ? (existingDef[existingDef.type] || {}) : {};
   const transport0 = inner0.transport || {};
@@ -287,6 +298,7 @@ function openProxyForm(nodeId, mode, existingDef, allowedTypes = PROXY_TYPES) {
   const annItems0 = Object.entries(inner0.annotations || {});
   const reqHeaderItems0 = Object.entries((inner0.requestHeaders || {}).set || {});
   const resHeaderItems0 = Object.entries((inner0.responseHeaders || {}).set || {});
+  const forcedHostItems0 = Object.entries(inner0.forcedHosts || {});
   const nat0 = inner0.natTraversal || {};
   const enable0 = editing ? inner0.enabled !== false : true; // mặc định bật
   const plugin0 = inner0.plugin || {};
@@ -327,6 +339,12 @@ function openProxyForm(nodeId, mode, existingDef, allowedTypes = PROXY_TYPES) {
     if (type === 'tcpmux')
       return input(`Custom Domains ${UI.help('custom-domains')}`, 'customDomains', (inner.customDomains || []).join(','), { full: true }) +
         input('Multiplexer', 'multiplexer', inner.multiplexer || 'httpconnect');
+    if (type === 'mc')
+      return input(`Custom Domains (cách nhau dấu phẩy) ${UI.help('custom-domains')}`, 'customDomains', (inner.customDomains || []).join(','), { full: true }) +
+        input('Subdomain', 'subdomain', inner.subdomain || '') +
+        input('Remote Port', 'remotePort', inner.remotePort ?? '', { type: 'number', ph: '0 = ngẫu nhiên' });
+    if (type === 'pe')
+      return input('Remote Port', 'remotePort', inner.remotePort ?? '', { type: 'number', ph: 'vd 19132', full: true });
     // Nhóm bảo mật/P2P: stcp, sudp, xtcp, xudp, stcp+sudp, xtcp+xudp → Secret Key + Allow Users.
     const secret = input('Secret Key', 'secretKey', inner.secretKey || '', { full: true }) +
       input('Allow Users (cách nhau dấu phẩy)', 'allowUsers', (inner.allowUsers || []).join(','), { full: true, ph: '* = mọi user · để trống = chỉ cùng user' });
@@ -367,7 +385,7 @@ function openProxyForm(nodeId, mode, existingDef, allowedTypes = PROXY_TYPES) {
           </label>
         </div>
       </div>
-      <div id="type-note">${proxyTypeNote(type0)}</div>
+      <div id="type-note">${proxyTypeNote(type0, variant)}</div>
       <div id="type-fields" class="grid grid-cols-2 gap-3">${typeFields(type0, inner0)}</div>
 
       <div id="http-options" class="${['http', 'tcpmux'].includes(type0) ? '' : 'hidden'} rounded-lg border border-zinc-800 p-3 space-y-3">
@@ -389,6 +407,11 @@ function openProxyForm(nodeId, mode, existingDef, allowedTypes = PROXY_TYPES) {
             ${kvBlock('responseHeaders', resHeaderItems0, 'Header', 'Value')}
           </div>
         </div>
+      </div>
+
+      <div id="pe-options" class="${type0 === 'pe' ? '' : 'hidden'} rounded-lg border border-zinc-800 p-3">
+        <div class="text-sm text-zinc-300 mb-2">Forced Hosts <span class="text-zinc-600 text-[11px]">— map hostname người chơi → server Bedrock local (ip:port)</span></div>
+        ${kvBlock('forcedHosts', forcedHostItems0, 'hostname (vd play.abc.com)', 'ip:port (vd 127.0.0.1:19132)')}
       </div>
 
       <div id="nat-options" class="${['xtcp', 'xudp', 'xtcp+xudp'].includes(type0) ? '' : 'hidden'} rounded-lg border border-zinc-800 p-3">
@@ -528,12 +551,14 @@ function openProxyForm(nodeId, mode, existingDef, allowedTypes = PROXY_TYPES) {
       form.elements.type.addEventListener('change', () => {
         const t = form.elements.type.value;
         rootEl.querySelector('#type-fields').innerHTML = typeFields(t, {});
-        rootEl.querySelector('#type-note').innerHTML = proxyTypeNote(t);
+        rootEl.querySelector('#type-note').innerHTML = proxyTypeNote(t, variant);
         // HTTP Options: hiện với http & tcpmux; field http-only chỉ với http.
         rootEl.querySelector('#http-options').classList.toggle('hidden', !['http', 'tcpmux'].includes(t));
         rootEl.querySelectorAll('#http-options .http-only').forEach((el) => el.classList.toggle('hidden', t !== 'http'));
         // NAT Traversal: chỉ xtcp/xudp/xtcp+xudp.
         rootEl.querySelector('#nat-options').classList.toggle('hidden', !['xtcp', 'xudp', 'xtcp+xudp'].includes(t));
+        // Forced Hosts: chỉ pe (Bedrock).
+        rootEl.querySelector('#pe-options').classList.toggle('hidden', t !== 'pe');
       });
       // Backend Mode: Direct <-> Plugin
       rootEl.querySelectorAll('[name="backendMode"]').forEach((r) => r.addEventListener('change', () => {
@@ -605,6 +630,8 @@ function buildProxyDefinition(form) {
   else if (type === 'tcp+udp') { setNum('remotePort'); setNum('localPortUDP'); }
   else if (['http', 'https'].includes(type)) { setDomains(); setStr('subdomain'); }
   else if (type === 'tcpmux') { setDomains(); setStr('multiplexer'); }
+  else if (type === 'mc') { setDomains(); setStr('subdomain'); setNum('remotePort'); }
+  else if (type === 'pe') { setNum('remotePort'); const fh = kvToObject('forcedHosts'); if (Object.keys(fh).length) inner.forcedHosts = fh; }
   else { // stcp/sudp/xtcp/xudp/stcp+sudp/xtcp+xudp
     setStr('secretKey'); setArr('allowUsers');
     if (type === 'stcp+sudp' || type === 'xtcp+xudp') setNum('localPortUDP');

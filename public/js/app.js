@@ -65,12 +65,6 @@ window.App = (() => {
   }
 
   // ---------------- Sidebar ----------------
-  function encBadgeHtml() {
-    const e = Store.state.encryption;
-    if (!e) return '';
-    if (e === 'aes-256-gcm') return collapsed ? '<i class="fa-solid fa-lock text-emerald-500"></i>' : '<i class="fa-solid fa-lock text-emerald-500"></i> AES-256-GCM';
-    return collapsed ? '<i class="fa-solid fa-triangle-exclamation text-amber-500"></i>' : '<i class="fa-solid fa-triangle-exclamation text-amber-500"></i> base64 (đặt SECRET_KEY)';
-  }
 
   function userBoxHtml() {
     const u = Store.state.user; const role = Store.state.role;

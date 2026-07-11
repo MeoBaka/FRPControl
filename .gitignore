@@ -10,3 +10,4 @@ npm-debug.log*
 # chứng chỉ + PRIVATE KEY (data/ssl, data/certs)...
 # App tự tạo lại các thư mục này khi khởi động (src/config.js).
 data/
+web

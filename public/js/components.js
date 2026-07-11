@@ -248,7 +248,7 @@ window.UI = (() => {
               <option value="extended" ${inst?.frpVariant !== 'standard' ? 'selected' : ''}>Meobaka fork — đầy đủ type mới (xudp, tcp+udp, stcp+sudp, xtcp+xudp)</option>
               <option value="standard" ${inst?.frpVariant === 'standard' ? 'selected' : ''}>frp chuẩn / cũ — chỉ type gốc</option>
             </select>
-            <p class="text-[11px] text-zinc-500 mt-1">Chọn "chuẩn / cũ" nếu chạy frp gốc (vd v0.69.1) — ẩn các type mở rộng để tránh lỗi "invalid proxy type".</p>
+            <p class="text-[11px] text-zinc-500 mt-1">Chọn "chuẩn / cũ" nếu chạy frp gốc (vd v0.69.1). Không ẩn type nào — chỉ <b>cảnh báo đỏ</b> khi chọn type mở rộng mà node là bản chuẩn (sẽ báo "invalid proxy type").</p>
           </div>
         </div>
         <div id="inst-test-result" class="hidden rounded-lg px-3 py-2 text-sm"></div>

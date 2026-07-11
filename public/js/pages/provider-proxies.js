@@ -1,5 +1,66 @@
 /* Provider Proxies — proxy của 1 provider được chọn (ảnh 5). */
 window.Pages = window.Pages || {};
+
+// Biểu đồ traffic 7 ngày cho 1 proxy (frps trả {trafficIn:[7], trafficOut:[7]}, index cuối = hôm nay).
+function trafficChartHtml(data) {
+  const F = Fmt;
+  const tin = data.trafficIn || [];
+  const tout = data.trafficOut || [];
+  const n = Math.max(tin.length, tout.length);
+  if (!n) return '<p class="text-sm text-zinc-500 text-center py-6">Chưa có dữ liệu traffic cho proxy này.</p>';
+  const max = Math.max(1, ...tin, ...tout);
+  const H = 140;
+  let bars = '';
+  for (let i = 0; i < n; i++) {
+    const inv = tin[i] || 0;
+    const outv = tout[i] || 0;
+    const label = i === n - 1 ? 'Hôm nay' : `-${n - 1 - i}d`;
+    bars += `<div class="flex-1 flex flex-col items-center justify-end gap-1.5">
+      <div class="flex items-end justify-center gap-1" style="height:${H}px" title="${label}: ↓ ${F.formatBytes(inv)} · ↑ ${F.formatBytes(outv)}">
+        <div class="w-3 rounded-t bg-emerald-500/80 hover:bg-emerald-400" style="height:${Math.max(2, Math.round((inv / max) * H))}px"></div>
+        <div class="w-3 rounded-t bg-sky-500/80 hover:bg-sky-400" style="height:${Math.max(2, Math.round((outv / max) * H))}px"></div>
+      </div>
+      <div class="text-[10px] text-zinc-500 whitespace-nowrap">${label}</div>
+    </div>`;
+  }
+  const sumIn = tin.reduce((a, b) => a + b, 0);
+  const sumOut = tout.reduce((a, b) => a + b, 0);
+  return `<div class="flex items-end gap-2 px-1">${bars}</div>
+    <div class="flex items-center justify-center gap-5 mt-4 text-xs text-zinc-300">
+      <span class="flex items-center gap-1.5"><span class="inline-block w-2.5 h-2.5 rounded bg-emerald-500/80"></span> Vào — ${F.formatBytes(sumIn)}</span>
+      <span class="flex items-center gap-1.5"><span class="inline-block w-2.5 h-2.5 rounded bg-sky-500/80"></span> Ra — ${F.formatBytes(sumOut)}</span>
+      <span class="text-zinc-500">tổng 7 ngày</span>
+    </div>`;
+}
+function proxyInfoHtml(p) {
+  const F = Fmt;
+  if (!p) return '';
+  const item = (label, val) => `<div><div class="text-[11px] text-zinc-500">${label}</div><div class="text-sm text-zinc-200 mt-0.5">${val}</div></div>`;
+  return `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-lg bg-zinc-800/40 border border-zinc-700/60 p-3 mb-4">
+    ${item('Loại', F.typeTag(p.type))}
+    ${item('Trạng thái', F.statusPill(p.status))}
+    ${item('Remote Port', p.conf?.remotePort ?? '—')}
+    ${item('Kết nối', p.curConns ?? 0)}
+    ${item('Traffic hôm nay ↓', F.formatBytes(p.todayTrafficIn))}
+    ${item('Traffic hôm nay ↑', F.formatBytes(p.todayTrafficOut))}
+    ${item('Client', p.clientId ? F.escapeHtml(p.clientId) : '—')}
+    ${item('User', p.user ? F.escapeHtml(p.user) : '—')}
+  </div>`;
+}
+function openTrafficModal(providerId, proxy) {
+  const name = typeof proxy === 'string' ? proxy : proxy.name;
+  UI.openModal({
+    title: `Chi tiết proxy — ${name}`,
+    body: `${proxyInfoHtml(typeof proxy === 'object' ? proxy : null)}<div id="tf-body" class="min-h-[180px] flex items-center justify-center">${UI.spinner()}</div>`,
+    footer: UI.btn('Đóng', { attrs: 'data-modal-close' }),
+    size: 'lg',
+    onMount(root) {
+      API.traffic(providerId, name)
+        .then((data) => { root.querySelector('#tf-body').innerHTML = trafficChartHtml(data); })
+        .catch((err) => { root.querySelector('#tf-body').innerHTML = UI.errorBox('Không lấy được traffic.', err.message); });
+    },
+  });
+}
 Pages['providers/proxies'] = {
   title: 'Provider Proxies',
   subtitle: 'Toàn bộ proxy đang đăng ký trên FRPS',
@@ -26,9 +87,7 @@ Pages['providers/proxies'] = {
     const reachable = data.reachable;
     const proxies = reachable ? (data.proxies || []) : [];
 
-    const baseTypes = ['ALL', 'TCP', 'UDP', 'HTTP', 'HTTPS', 'TCPMUX', 'STCP', 'XTCP', 'SUDP'];
-    // Ẩn tab type mở rộng nếu provider chạy frp chuẩn/cũ.
-    const TYPES = provider.frpVariant === 'standard' ? baseTypes : [...baseTypes, 'XUDP', 'TCP+UDP', 'STCP+SUDP', 'XTCP+XUDP'];
+    const TYPES = ['ALL', 'TCP', 'UDP', 'HTTP', 'HTTPS', 'TCPMUX', 'STCP', 'XTCP', 'SUDP', 'XUDP', 'TCP+UDP', 'STCP+SUDP', 'XTCP+XUDP', 'MC', 'PE'];
     const clientIds = [...new Set(proxies.map((p) => p.clientId).filter(Boolean))];
     const statuses = [...new Set(proxies.map((p) => p.status).filter(Boolean))].sort();
     // Được điều hướng từ Status -> lọc sẵn (proxy có kết nối / proxy online)
@@ -46,7 +105,8 @@ Pages['providers/proxies'] = {
         <td class="px-3 py-2 font-mono text-xs">${p.clientId
           ? `<button data-open-client="${F.escapeHtml(p.clientId)}" class="text-brand-400 hover:text-brand-300 hover:underline">${F.escapeHtml(p.clientId)}</button>`
           : '<span class="text-zinc-400">—</span>'}</td>
-        <td class="px-3 py-2 text-right text-xs whitespace-nowrap tabular-nums"><i class="fa-solid fa-arrow-down text-emerald-400"></i> ${F.formatBytes(p.todayTrafficIn)} &nbsp;<i class="fa-solid fa-arrow-up text-sky-400"></i> ${F.formatBytes(p.todayTrafficOut)}</td>
+        <td class="px-3 py-2 text-right text-xs whitespace-nowrap tabular-nums"><span class="text-emerald-400">↓</span> ${F.formatBytes(p.todayTrafficIn)} &nbsp;<span class="text-sky-400">↑</span> ${F.formatBytes(p.todayTrafficOut)}
+          <button data-traffic="${F.escapeHtml(p.name)}" title="Xem chi tiết + traffic 7 ngày" class="ml-2 text-brand-400 hover:text-brand-300 hover:underline">Chi tiết</button></td>
         <td class="px-3 py-2">${F.statusPill(p.status)}</td>
       </tr>`;
 
@@ -94,6 +154,8 @@ Pages['providers/proxies'] = {
     draw();
     // Click vào Client -> mở trang chi tiết client (cùng provider đang chọn)
     root.addEventListener('click', async (e) => {
+      const tf = e.target.closest('[data-traffic]');
+      if (tf) return openTrafficModal(provider.id, proxies.find((x) => x.name === tf.dataset.traffic) || tf.dataset.traffic);
       const c = e.target.closest('[data-open-client]');
       if (c) { sessionStorage.setItem('open.client', c.dataset.openClient); return App.navigate('#/providers/clients'); }
       // Click tên proxy -> tìm ĐÚNG node chứa proxy này rồi sang Node Proxies (lọc sẵn theo tên)

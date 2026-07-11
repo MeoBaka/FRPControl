@@ -8,7 +8,7 @@ import { callFrpApi } from './frpApi.service.js';
 // Các loại proxy mà frps hỗ trợ liệt kê qua /api/proxy/{type}.
 // Khớp IsProxyType của fork (client/http/model/proxy_definition.go). tcp+udp/stcp+sudp/xtcp+xudp
 // là type thật. Không có "http+https". Type không tồn tại trên frps sẽ trả 404 và bị bỏ qua (allSettled).
-export const PROXY_TYPES = ['tcp', 'udp', 'http', 'https', 'tcpmux', 'stcp', 'sudp', 'xtcp', 'xudp', 'tcp+udp', 'stcp+sudp', 'xtcp+xudp'];
+export const PROXY_TYPES = ['tcp', 'udp', 'http', 'https', 'tcpmux', 'stcp', 'sudp', 'xtcp', 'xudp', 'tcp+udp', 'stcp+sudp', 'xtcp+xudp', 'mc', 'pe'];
 
 export function getServerInfo(instance) {
   return callFrpApi(instance, '/api/serverinfo');

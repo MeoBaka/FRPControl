@@ -3,9 +3,17 @@ window.Pages = window.Pages || {};
 
 // Khớp IsVisitorType của fork (client/http/model/visitor_definition.go).
 const VISITOR_TYPES = ['stcp', 'sudp', 'xtcp', 'xudp', 'stcp+sudp', 'xtcp+xudp'];
-// Visitor type có ở frp GỐC/cũ. Node frpVariant='standard' chỉ dùng nhóm này.
-const STANDARD_VISITOR_TYPES = ['stcp', 'sudp', 'xtcp'];
-const visitorTypesFor = (node) => (node && node.frpVariant === 'standard' ? STANDARD_VISITOR_TYPES : VISITOR_TYPES);
+// Visitor type mở rộng chỉ có ở fork Meobaka (v1.3.x+). KHÔNG ẩn — chỉ hiện note cảnh báo.
+const EXTENDED_VISITOR_TYPES = ['xudp', 'stcp+sudp', 'xtcp+xudp'];
+function visitorVersionNote(type, variant) {
+  if (!EXTENDED_VISITOR_TYPES.includes(type)) return '';
+  const standard = variant === 'standard';
+  const cls = standard ? 'bg-red-900/30 border-red-700/60 text-red-300' : 'bg-amber-900/20 border-amber-700/50 text-amber-300';
+  const msg = standard
+    ? 'Node này đang đặt là <b>frp chuẩn/cũ</b> — visitor type mở rộng <b>sẽ KHÔNG chạy</b>. Cần <b>fork Meobaka v1.3.x+</b>.'
+    : 'Visitor type mở rộng — chỉ chạy trên <b>fork Meobaka (v1.3.x+)</b>. frp gốc/cũ sẽ báo "invalid visitor type".';
+  return `<div class="mt-2 rounded-lg border p-2.5 text-[11px] leading-relaxed ${cls}">${msg}</div>`;
+}
 
 Pages['nodes/visitors'] = {
   title: 'Node Visitors',
@@ -71,13 +79,13 @@ Pages['nodes/visitors'] = {
     UI.paginatedTable(root.querySelector('#tbl'), { headers: HEADERS, rows: (store.visitors || []).map(rowHtml), emptyText: 'Chưa có visitor nào trong store.', emptyHtml: visitorEmpty });
 
     const view = root.querySelector('#visitors-view');
-    const allowedTypes = visitorTypesFor(node);
-    view.querySelector('#add-visitor')?.addEventListener('click', () => openVisitorForm(node.id, 'create', null, allowedTypes));
-    view.querySelector('#add-visitor-empty')?.addEventListener('click', () => openVisitorForm(node.id, 'create', null, allowedTypes));
+    const variant = node.frpVariant || 'extended';
+    view.querySelector('#add-visitor')?.addEventListener('click', () => openVisitorForm(node.id, 'create', null, variant));
+    view.querySelector('#add-visitor-empty')?.addEventListener('click', () => openVisitorForm(node.id, 'create', null, variant));
     view.addEventListener('click', async (e) => {
       const edit = e.target.closest('[data-edit]');
       if (edit) {
-        try { const def = await API.getStoreVisitor(node.id, edit.dataset.edit); openVisitorForm(node.id, 'edit', def, allowedTypes); }
+        try { const def = await API.getStoreVisitor(node.id, edit.dataset.edit); openVisitorForm(node.id, 'edit', def, variant); }
         catch (err) { UI.toast('Không lấy được: ' + err.message, 'error'); }
         return;
       }
@@ -91,16 +99,17 @@ Pages['nodes/visitors'] = {
   },
 };
 
-function openVisitorForm(nodeId, mode, existingDef, allowedTypes = VISITOR_TYPES) {
+function openVisitorForm(nodeId, mode, existingDef, variant = 'extended') {
   const F = Fmt;
   const editing = mode === 'edit';
-  const typeOptions = editing && existingDef && !allowedTypes.includes(existingDef.type)
-    ? [existingDef.type, ...allowedTypes] : allowedTypes;
+  const typeOptions = editing && existingDef && !VISITOR_TYPES.includes(existingDef.type)
+    ? [existingDef.type, ...VISITOR_TYPES] : VISITOR_TYPES;
   const type0 = editing ? existingDef.type : 'stcp';
   const inner0 = editing ? (existingDef[existingDef.type] || {}) : {};
   const transport0 = inner0.transport || {};
   const enable0 = editing ? inner0.enabled !== false : true;
   const nat0 = inner0.natTraversal || {};
+  const plugin0 = inner0.plugin || {};
   // Tùy chọn P2P chỉ áp dụng cho visitor xtcp/xudp/xtcp+xudp. fallbackTimeoutMs chỉ có ở xtcp & xtcp+xudp.
   const isP2P = (t) => ['xtcp', 'xudp', 'xtcp+xudp'].includes(t);
   const hasFallback = (t) => t === 'xtcp' || t === 'xtcp+xudp';
@@ -133,6 +142,7 @@ function openVisitorForm(nodeId, mode, existingDef, allowedTypes = VISITOR_TYPES
           <div class="mt-1.5">${toggle('enabled', enable0)}</div>
         </div>
       </div>
+      <div id="visitor-type-note">${visitorVersionNote(type0, variant)}</div>
 
       <div class="rounded-lg border border-zinc-800 p-4">
         <div class="text-sm text-zinc-300 mb-3">Connection</div>
@@ -141,8 +151,25 @@ function openVisitorForm(nodeId, mode, existingDef, allowedTypes = VISITOR_TYPES
           ${input('Server User', 'serverUser', inner0.serverUser || '', { ph: 'để trống = cùng user' })}
           ${input('Secret Key', 'secretKey', inner0.secretKey || '', { full: true, ph: 'shared secret' })}
           ${input('Bind Address', 'bindAddr', inner0.bindAddr || '127.0.0.1')}
-          ${input('Bind Port *', 'bindPort', inner0.bindPort ?? '', { type: 'number' })}
+          ${input('Bind Port *', 'bindPort', inner0.bindPort ?? '', { type: 'number', hint: 'Dùng -1 khi chỉ nhận qua visitor khác / plugin virtual_net (không mở cổng local).' })}
         </div>
+      </div>
+
+      <div class="rounded-lg border border-zinc-800 p-4">
+        <div class="text-sm text-zinc-300 mb-3">Plugin</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-zinc-400 mb-1">Plugin Type</label>
+            <select name="pluginType" class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">
+              <option value="" ${!plugin0.type ? 'selected' : ''}>None</option>
+              <option value="virtual_net" ${plugin0.type === 'virtual_net' ? 'selected' : ''}>virtual_net</option>
+            </select>
+          </div>
+          <div id="visitor-plugin-fields" class="${plugin0.type === 'virtual_net' ? '' : 'hidden'}">
+            ${input('Destination IP', 'destinationIP', plugin0.destinationIP || '', { ph: '10.10.10.10' })}
+          </div>
+        </div>
+        <p class="text-[11px] text-zinc-500 mt-2"><b>virtual_net</b>: nối visitor vào mạng ảo của frp; <b>Destination IP</b> là IP đích trong virtual net cần truy cập.</p>
       </div>
 
       <div class="rounded-lg border border-zinc-800 p-4">
@@ -202,6 +229,11 @@ function openVisitorForm(nodeId, mode, existingDef, allowedTypes = VISITOR_TYPES
         const t = form.elements.type.value;
         rootEl.querySelector('#p2p-options').classList.toggle('hidden', !isP2P(t));
         rootEl.querySelector('#fallback-field').classList.toggle('hidden', !hasFallback(t));
+        rootEl.querySelector('#visitor-type-note').innerHTML = visitorVersionNote(t, variant);
+      });
+      // Plugin virtual_net: hiện field Destination IP khi chọn.
+      form.elements.pluginType.addEventListener('change', () => {
+        rootEl.querySelector('#visitor-plugin-fields').classList.toggle('hidden', form.elements.pluginType.value !== 'virtual_net');
       });
       rootEl.querySelector('#visitor-save').addEventListener('click', async () => {
         const errBox = rootEl.querySelector('#visitor-error');
@@ -247,6 +279,13 @@ function buildVisitorDefinition(form) {
     // fallbackTimeoutMs chỉ hợp lệ cho xtcp & xtcp+xudp (xudp không có field này).
     if ((type === 'xtcp' || type === 'xtcp+xudp') && g('fallbackTimeoutMs')) inner.fallbackTimeoutMs = Number(g('fallbackTimeoutMs'));
     if (form.elements.disableAssistedAddrs?.checked) inner.natTraversal = { disableAssistedAddrs: true };
+  }
+
+  // Plugin visitor (virtual_net) — issue fatedier/frp#5410.
+  if (g('pluginType') === 'virtual_net') {
+    const plugin = { type: 'virtual_net' };
+    if (g('destinationIP')) plugin.destinationIP = g('destinationIP');
+    inner.plugin = plugin;
   }
 
   inner.enabled = form.elements.enabled ? form.elements.enabled.checked : true;
