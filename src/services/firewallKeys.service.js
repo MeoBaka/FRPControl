@@ -36,8 +36,8 @@ export function listKeys() {
   return loadAll().map(toPublic);
 }
 
-/** Tạo key mới. Trả bản ghi + `key` raw (hiện 1 lần duy nhất). */
-export function createKey(name) {
+/** Tạo key mới. Trả bản ghi + `key` raw (hiện 1 lần duy nhất). canAdd = cho phép THÊM IP chặn. */
+export function createKey(name, canAdd = false) {
   loadAll();
   const raw = 'fwk_' + crypto.randomBytes(24).toString('hex'); // 48 hex
   const rec = {
@@ -45,6 +45,7 @@ export function createKey(name) {
     name: String(name || '').trim().slice(0, 80) || 'API key',
     hash: sha256(raw),
     prefix: raw.slice(0, 12),
+    canAdd: Boolean(canAdd),
     createdAt: new Date().toISOString(),
     lastUsedAt: null,
     requests: 0,

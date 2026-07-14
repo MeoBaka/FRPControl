@@ -54,8 +54,8 @@ export async function refresh(req, res) {
 export function listKeys(req, res) { res.json({ keys: keys.listKeys() }); }
 
 export function createKey(req, res) {
-  const created = keys.createKey(req.body?.name);
-  req._auditDetail = `tạo API key firewall "${created.name}"`;
+  const created = keys.createKey(req.body?.name, req.body?.canAdd);
+  req._auditDetail = `tạo API key firewall "${created.name}"${created.canAdd ? ' (được thêm IP chặn)' : ''}`;
   res.status(201).json({ key: created }); // raw hiện 1 lần
 }
 
@@ -63,6 +63,40 @@ export function deleteKey(req, res) {
   const ok = keys.deleteKey(req.params.id);
   if (!ok) return res.status(404).json({ error: 'Không tìm thấy API key.' });
   res.json({ deleted: true });
+}
+
+// ---------------- Custom block (chặn thủ công) ----------------
+function addBlockWith(req, res, by) {
+  const ip = String(req.body?.ip || '').trim();
+  if (!ip) return res.status(400).json({ error: 'Thiếu ip.' });
+  try {
+    const rec = bl.addCustom(ip, {
+      days: req.body?.days,
+      permanent: req.body?.permanent,
+      reason: req.body?.reason,
+      by,
+    });
+    req._auditDetail = `chặn IP "${ip}"${rec.permanent ? ' (vĩnh viễn)' : ` (${req.body?.days || 14} ngày)`}`;
+    return res.status(201).json({ blocked: rec });
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+}
+
+export function listCustom(req, res) { res.json({ custom: bl.listCustom() }); }
+export function addBlock(req, res) { addBlockWith(req, res, req.auth?.user?.username || 'admin'); }
+export function removeBlock(req, res) {
+  const ip = String(req.query.ip || req.body?.ip || '').trim();
+  if (!ip) return res.status(400).json({ error: 'Thiếu ip.' });
+  if (!bl.removeCustom(ip)) return res.status(404).json({ error: 'Không có IP này trong danh sách chặn thủ công.' });
+  req._auditDetail = `bỏ chặn IP "${ip}"`;
+  res.json({ removed: true });
+}
+
+/** Public: thêm IP chặn — chỉ key có canAdd. */
+export function publicAddBlock(req, res) {
+  if (!req.fwKey?.canAdd) return res.status(403).json({ error: 'API key này không có quyền thêm IP chặn.' });
+  return addBlockWith(req, res, `api:${req.fwKey.name}`);
 }
 
 // ---------------- Public API (xác thực bằng API key) ----------------

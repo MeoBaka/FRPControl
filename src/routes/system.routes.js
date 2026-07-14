@@ -51,5 +51,9 @@ router.post('/firewall/refresh', requirePermission('firewall.update'), fw.refres
 router.get('/firewall/keys', requirePermission('firewall.keys'), fw.listKeys);
 router.post('/firewall/keys', requirePermission('firewall.keys'), fw.createKey);
 router.delete('/firewall/keys/:id', requirePermission('firewall.keys'), fw.deleteKey);
+// Chặn thủ công
+router.get('/firewall/custom', requirePermission('firewall.view'), fw.listCustom);
+router.post('/firewall/custom', requirePermission('firewall.update'), fw.addBlock);
+router.delete('/firewall/custom', requirePermission('firewall.update'), fw.removeBlock);
 
 export default router;

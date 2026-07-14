@@ -34,7 +34,7 @@ Pages['system/firewall'] = {
     const cards = `<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
       ${UI.statCard({ label: 'Firewall', value: st.enabled ? 'Bật' : 'Tắt' })}
       ${UI.statCard({ label: 'Dải IPv4 / IPv6', value: `${num(st.ipv4Ranges)} / ${num(st.ipv6Ranges)}` })}
-      ${UI.statCard({ label: 'Số IP phủ (IPv4)', value: num(st.ipv4AddressesCovered) })}
+      ${UI.statCard({ label: 'Chặn thủ công (đang hiệu lực)', value: num(st.customCount) })}
       ${UI.statCard({ label: 'Đã chặn/đánh dấu', value: num(st.hits) })}
     </div>`;
 
@@ -62,6 +62,25 @@ Pages['system/firewall'] = {
       <div id="fw-check-result"></div>
     </div>`);
 
+    // ---- Chặn IP thủ công ----
+    const customCard = canUpdate ? UI.card('Chặn IP thủ công', `<div class="p-4 space-y-3">
+      <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2 items-end">
+        <div>
+          <label class="block text-xs text-zinc-400 mb-1">IP hoặc CIDR</label>
+          <input id="cb-ip" placeholder="1.2.3.4 hoặc 1.2.3.0/24" class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs text-zinc-400 mb-1">Số ngày</label>
+          <input id="cb-days" type="number" value="14" min="1" class="w-24 rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none" />
+        </div>
+        <label class="flex items-center gap-1.5 text-sm text-zinc-300 pb-2"><input type="checkbox" id="cb-perm" class="rounded bg-zinc-800 border-zinc-700"/> Vĩnh viễn</label>
+        ${UI.btn('Chặn', { size: 'sm', variant: 'primary', attrs: 'id="cb-add"' })}
+      </div>
+      <input id="cb-reason" placeholder="Lý do (tùy chọn)" class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none" />
+      <p class="text-[11px] text-zinc-500">Mặc định cấm <b>14 ngày</b> rồi tự bỏ. Tick <b>Vĩnh viễn</b> để chặn mãi. Danh sách này gộp cùng blacklist tải về khi kiểm tra.</p>
+      <div id="fw-custom"></div>
+    </div>`) : '';
+
     // ---- API keys ----
     const keyApiNote = st.apiEnabled ? '' : '<div class="mx-4 mt-3 rounded-lg bg-amber-900/20 border border-amber-700/50 p-2.5 text-[11px] text-amber-200">Firewall API đang <b>tắt</b> — key tạo ở đây chưa dùng được cho tới khi bật "Firewall API" trong <b>Configs</b>.</div>';
     const keysCard = canKeys ? UI.card('API key (chia sẻ tra cứu)',
@@ -72,6 +91,7 @@ Pages['system/firewall'] = {
       ${cards}
       ${infoCard}
       ${checkCard}
+      ${customCard}
       ${keysCard}
       ${docsHtml(location.origin)}
     </div>`;
@@ -93,6 +113,31 @@ Pages['system/firewall'] = {
       } catch (err) { box.innerHTML = `<p class="text-xs text-red-400">Lỗi: ${F.escapeHtml(err.message)}</p>`; }
     });
 
+    // Chặn thủ công
+    if (canUpdate) {
+      const custMount = root.querySelector('#fw-custom');
+      await drawCustom(custMount, F);
+      const permEl = root.querySelector('#cb-perm');
+      const daysEl = root.querySelector('#cb-days');
+      permEl.addEventListener('change', () => { daysEl.disabled = permEl.checked; });
+      root.querySelector('#cb-add').addEventListener('click', async () => {
+        const ip = root.querySelector('#cb-ip').value.trim();
+        if (!ip) { UI.toast('Nhập IP/CIDR.', 'error'); return; }
+        const permanent = permEl.checked;
+        try {
+          await API.firewallAddBlock({ ip, permanent, days: Number(daysEl.value) || 14, reason: root.querySelector('#cb-reason').value.trim() });
+          UI.toast(`Đã chặn ${ip}.`, 'success');
+          root.querySelector('#cb-ip').value = ''; root.querySelector('#cb-reason').value = '';
+          await drawCustom(custMount, F);
+        } catch (err) { UI.toast('Lỗi: ' + err.message, 'error'); }
+      });
+      custMount.addEventListener('click', async (e) => {
+        const del = e.target.closest('[data-unblock]'); if (!del) return;
+        try { await API.firewallRemoveBlock(del.dataset.unblock); UI.toast('Đã bỏ chặn.', 'success'); await drawCustom(custMount, F); }
+        catch (err) { UI.toast('Lỗi: ' + err.message, 'error'); }
+      });
+    }
+
     // API keys
     if (canKeys) {
       await drawKeys(root.querySelector('#fw-keys'), F);
@@ -113,13 +158,35 @@ async function drawKeys(mount, F) {
   const rows = keys.map((k) => `<tr class="border-b border-zinc-800/60 hover:bg-zinc-800/30">
     <td class="px-3 py-2 font-medium">${F.escapeHtml(k.name)}</td>
     <td class="px-3 py-2 font-mono text-xs text-zinc-400">${F.escapeHtml(k.prefix)}…</td>
+    <td class="px-3 py-2 text-xs">${k.canAdd ? '<span class="text-amber-400">tra cứu + thêm chặn</span>' : '<span class="text-zinc-400">chỉ tra cứu</span>'}</td>
     <td class="px-3 py-2 text-xs text-zinc-400">${new Date(k.createdAt).toLocaleDateString('vi-VN')}</td>
     <td class="px-3 py-2 text-xs text-zinc-400">${k.lastUsedAt ? F.timeAgo(k.lastUsedAt) : '—'}</td>
     <td class="px-3 py-2 text-xs tabular-nums">${Number(k.requests || 0).toLocaleString('vi-VN')}</td>
     <td class="px-3 py-2 text-right">${UI.btn('Xóa', { size: 'sm', variant: 'danger', attrs: `data-del-key="${k.id}" data-name="${F.escapeHtml(k.name)}"` })}</td>
   </tr>`).join('');
   mount.innerHTML = `<div class="overflow-x-auto"><table class="w-full text-sm">
-    <thead class="text-xs text-zinc-500"><tr><th class="px-3 py-1.5 text-left">Tên</th><th class="px-3 py-1.5 text-left">Prefix</th><th class="px-3 py-1.5 text-left">Tạo</th><th class="px-3 py-1.5 text-left">Dùng lần cuối</th><th class="px-3 py-1.5 text-left">Requests</th><th></th></tr></thead>
+    <thead class="text-xs text-zinc-500"><tr><th class="px-3 py-1.5 text-left">Tên</th><th class="px-3 py-1.5 text-left">Prefix</th><th class="px-3 py-1.5 text-left">Quyền</th><th class="px-3 py-1.5 text-left">Tạo</th><th class="px-3 py-1.5 text-left">Dùng lần cuối</th><th class="px-3 py-1.5 text-left">Requests</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+async function drawCustom(mount, F) {
+  const { custom } = await API.firewallListCustom();
+  if (!custom.length) { mount.innerHTML = '<p class="text-sm text-zinc-500">Chưa có IP chặn thủ công.</p>'; return; }
+  const fmtExp = (c) => {
+    if (c.permanent) return '<span class="text-zinc-300">Vĩnh viễn</span>';
+    if (c.expired) return '<span class="text-zinc-600">Đã hết hạn</span>';
+    const left = Math.max(0, Math.ceil((c.expiresAt - Date.now()) / 86400000));
+    return `<span class="text-amber-400">còn ${left} ngày</span>`;
+  };
+  const rows = custom.map((c) => `<tr class="border-b border-zinc-800/60 hover:bg-zinc-800/30 ${c.expired ? 'opacity-50' : ''}">
+    <td class="px-3 py-2 font-mono text-xs">${F.escapeHtml(c.input)}</td>
+    <td class="px-3 py-2 text-xs text-zinc-400">${F.escapeHtml(c.reason || '—')}</td>
+    <td class="px-3 py-2 text-xs text-zinc-500">${F.escapeHtml(c.addedBy || '—')}</td>
+    <td class="px-3 py-2 text-xs">${fmtExp(c)}</td>
+    <td class="px-3 py-2 text-right">${UI.btn('Bỏ chặn', { size: 'sm', variant: 'danger', attrs: `data-unblock="${F.escapeHtml(c.input)}"` })}</td>
+  </tr>`).join('');
+  mount.innerHTML = `<div class="overflow-x-auto mt-1"><table class="w-full text-sm">
+    <thead class="text-xs text-zinc-500"><tr><th class="px-3 py-1.5 text-left">IP / CIDR</th><th class="px-3 py-1.5 text-left">Lý do</th><th class="px-3 py-1.5 text-left">Thêm bởi</th><th class="px-3 py-1.5 text-left">Hết hạn</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
 
@@ -131,14 +198,19 @@ function openCreateKey(root, F) {
         <label class="block text-xs text-zinc-400 mb-1">Tên gợi nhớ</label>
         <input name="name" placeholder="vd: server-web-01" class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none" />
       </div>
+      <label class="flex items-start gap-2 text-sm text-zinc-300">
+        <input type="checkbox" name="canAdd" class="mt-0.5 rounded bg-zinc-800 border-zinc-700" />
+        <span>Cho phép <b>thêm IP chặn</b> (không chỉ tra cứu)<br><span class="text-[11px] text-zinc-500">Key này có thể gọi <span class="font-mono">POST /api/fw/block</span> để đẩy IP vào danh sách chặn.</span></span>
+      </label>
       <div id="fw-key-out" class="hidden"></div>
     </form>`,
     footer: UI.btn('Đóng', { attrs: 'data-modal-close' }) + UI.btn('Tạo', { variant: 'primary', attrs: 'id="fw-key-create"' }),
     onMount(el) {
       el.querySelector('#fw-key-create').addEventListener('click', async () => {
         const name = el.querySelector('[name="name"]').value.trim();
+        const canAdd = el.querySelector('[name="canAdd"]').checked;
         try {
-          const { key } = await API.firewallCreateKey(name);
+          const { key } = await API.firewallCreateKey(name, canAdd);
           const out = el.querySelector('#fw-key-out');
           out.classList.remove('hidden');
           out.innerHTML = `<div class="rounded-lg bg-amber-900/20 border border-amber-700/50 p-3 text-xs text-amber-200 space-y-2">
@@ -178,6 +250,9 @@ function docsHtml(origin) {
             <div class="text-zinc-500"># nhiều IP: lặp ?ip=a&amp;ip=b</div></div>
           <div><span class="text-sky-400">POST</span> ${esc(origin)}/api/fw/check
             <div class="text-zinc-500"># body: {"ips":["1.2.3.4","8.8.8.8"]}  · tối đa 10.000</div></div>
+          <div><span class="text-amber-400">POST</span> ${esc(origin)}/api/fw/block
+            <div class="text-zinc-500"># THÊM IP chặn — chỉ key có "thêm IP chặn"</div>
+            <div class="text-zinc-500"># body: {"ip":"1.2.3.4","days":14,"permanent":false,"reason":"abuse"}</div></div>
           <div><span class="text-emerald-400">GET</span>  ${esc(origin)}/api/fw/stats
             <div class="text-zinc-500"># trạng thái blacklist</div></div>
         </div>
@@ -187,7 +262,13 @@ function docsHtml(origin) {
 
 curl -X POST "${esc(origin)}/api/fw/check" \\
   -H "X-API-Key: fwk_xxx" -H "Content-Type: application/json" \\
-  -d '{"ips":["1.0.0.104","8.8.8.8"]}'</pre>
+  -d '{"ips":["1.0.0.104","8.8.8.8"]}'
+
+# Thêm IP vào danh sách chặn (key phải có quyền "thêm IP chặn"):
+curl -X POST "${esc(origin)}/api/fw/block" \\
+  -H "X-API-Key: fwk_xxx" -H "Content-Type: application/json" \\
+  -d '{"ip":"45.61.12.9","days":14,"reason":"brute-force"}'
+# permanent: {"ip":"45.61.12.9","permanent":true}</pre>
         <div class="mt-3 font-medium text-zinc-100 mb-1">Tích hợp nhanh (Nginx allow/deny, fail2ban, script)</div>
         <p class="text-zinc-400">Dịch vụ của bạn gọi <code class="text-zinc-300">/api/fw/check</code> với IP khách; nếu <code class="text-zinc-300">blacklisted=true</code> thì từ chối. Kết quả trả về JSON gọn để tự động hóa.</p>
       </div>

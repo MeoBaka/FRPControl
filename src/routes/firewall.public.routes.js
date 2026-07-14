@@ -11,6 +11,7 @@ router.use(fw.apiKeyAuth);
 
 router.get('/check', fw.check);   // ?ip=1.2.3.4  (lặp ?ip= để nhiều)
 router.post('/check', fw.check);  // { "ips": ["1.2.3.4", ...] }
+router.post('/block', fw.publicAddBlock); // { ip, days?, permanent?, reason? } — cần key có canAdd
 router.get('/stats', fw.publicStats);
 
 export default router;

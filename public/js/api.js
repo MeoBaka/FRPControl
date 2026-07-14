@@ -89,8 +89,11 @@ window.API = (() => {
     firewallCheck: (ips) => request('POST', '/system/firewall/check', { ips }),
     firewallRefresh: () => request('POST', '/system/firewall/refresh'),
     firewallKeys: () => request('GET', '/system/firewall/keys'),
-    firewallCreateKey: (name) => request('POST', '/system/firewall/keys', { name }),
+    firewallCreateKey: (name, canAdd) => request('POST', '/system/firewall/keys', { name, canAdd }),
     firewallDeleteKey: (id) => request('DELETE', `/system/firewall/keys/${id}`),
+    firewallListCustom: () => request('GET', '/system/firewall/custom'),
+    firewallAddBlock: (p) => request('POST', '/system/firewall/custom', p),
+    firewallRemoveBlock: (ip) => request('DELETE', `/system/firewall/custom?ip=${encodeURIComponent(ip)}`),
 
     // Instances (provider = frps, node = frpc)
     listInstances: () => request('GET', '/instances'),

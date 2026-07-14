@@ -22,6 +22,10 @@ const DIR = path.join(config.dataDir, 'blacklist');
 const V4_BIN = path.join(DIR, 'ipv4-ranges.bin');
 const V6_JSON = path.join(DIR, 'ipv6-ranges.json');
 const META = path.join(DIR, 'meta.json');
+const CUSTOM_FILE = path.join(DIR, 'custom.json'); // danh sách chặn thủ công (tách khỏi nguồn tải về)
+
+const MAX_CUSTOM = 200000;       // trần chống lạm dụng qua API
+const DEFAULT_BLOCK_DAYS = 14;   // mặc định cấm 14 ngày (0/permanent = vĩnh viễn)
 
 // ----- State trong RAM (sau khi load) -----
 let v4 = new Uint32Array(0); // [lo,hi, lo,hi, ...] đã sắp xếp theo lo
@@ -30,6 +34,13 @@ let v6hi = [];               // BigInt[]
 let meta = null;
 let loaded = false;
 let building = false;
+
+// ----- Custom block (thủ công / qua API) -----
+// customList = nguồn sự thật để lưu + liệt kê. Các index bên dưới để tra cứu nhanh.
+let customList = [];             // [{ input, v, lo?, hi?, loHex?, hiHex?, reason, addedAt, addedBy, expiresAt(ms|null) }]
+let cExactV4 = new Map();        // int -> expiresAt
+let cExactV6 = new Map();        // hex -> expiresAt
+let cRanges = [];                // { v, lo, hi, expiresAt } (lo/hi: number cho v4, BigInt cho v6)
 
 function isLittleEndian() {
   const b = new ArrayBuffer(2);
@@ -213,16 +224,136 @@ function inV6(big) {
   return ans >= 0 && big <= v6hi[ans];
 }
 
-/** IP (chuỗi) có nằm trong blacklist không. IP không hợp lệ -> false. */
+const nowMs = () => Date.now();
+const stillActive = (exp) => exp === null || exp > nowMs();
+
+/** Custom block có chứa IP đã parse không (tôn trọng hết hạn). */
+function inCustom(p) {
+  if (p.v === 4) {
+    const exp = cExactV4.get(p.n);
+    if (exp !== undefined && stillActive(exp)) return true;
+  } else {
+    const exp = cExactV6.get(p.hex);
+    if (exp !== undefined && stillActive(exp)) return true;
+  }
+  if (cRanges.length) {
+    const big = p.v === 6 ? hexToBig(p.hex) : 0;
+    for (const r of cRanges) {
+      if (!stillActive(r.expiresAt)) continue;
+      if (r.v === 4 && p.v === 4) { if (p.n >= r.lo && p.n <= r.hi) return true; }
+      else if (r.v === 6 && p.v === 6) { if (big >= r.lo && big <= r.hi) return true; }
+    }
+  }
+  return false;
+}
+
+/** IP (chuỗi) có bị chặn không: custom block (thủ công/API) HOẶC blacklist tải về. */
 export function isBlacklisted(ipStr) {
-  if (!loaded) return false;
   const p = parseIp(ipStr);
   if (!p) return false;
+  if (inCustom(p)) return true;
+  if (!loaded) return false;
   return p.v === 4 ? inV4(p.n) : inV6(hexToBig(p.hex));
 }
 
 export function isLoaded() { return loaded; }
 export function getMeta() { return meta; }
+
+// ============================ CUSTOM BLOCK (thủ công / API) ============================
+function persistCustom() {
+  fs.mkdirSync(DIR, { recursive: true });
+  writeAtomic(CUSTOM_FILE, JSON.stringify(customList));
+}
+function rebuildCustomIndex() {
+  cExactV4 = new Map();
+  cExactV6 = new Map();
+  cRanges = [];
+  for (const e of customList) {
+    if (e.v === 4) {
+      if (e.lo === e.hi) cExactV4.set(e.lo, e.expiresAt);
+      else cRanges.push({ v: 4, lo: e.lo, hi: e.hi, expiresAt: e.expiresAt });
+    } else {
+      const lo = BigInt('0x' + e.loHex);
+      const hi = BigInt('0x' + e.hiHex);
+      if (lo === hi) cExactV6.set(e.loHex, e.expiresAt);
+      else cRanges.push({ v: 6, lo, hi, expiresAt: e.expiresAt });
+    }
+  }
+}
+export function loadCustom() {
+  try { customList = JSON.parse(fs.readFileSync(CUSTOM_FILE, 'utf8')); }
+  catch { customList = []; }
+  if (!Array.isArray(customList)) customList = [];
+  rebuildCustomIndex();
+}
+
+/**
+ * Thêm IP/CIDR vào danh sách chặn thủ công.
+ * opts: { days=14, permanent=false, reason='', by='' }. permanent hoặc days<=0 -> vĩnh viễn.
+ * Trả bản ghi (public). Ném lỗi nếu IP không hợp lệ / vượt trần.
+ */
+export function addCustom(input, opts = {}) {
+  const e = parseEntry(input);
+  if (!e) { const err = new Error('IP/CIDR không hợp lệ.'); err.status = 400; throw err; }
+  const permanent = Boolean(opts.permanent);
+  let days = Number(opts.days);
+  if (!Number.isFinite(days) || days <= 0) days = DEFAULT_BLOCK_DAYS; // bỏ trống -> mặc định 14 ngày
+  const expiresAt = permanent ? null : nowMs() + Math.min(days, 36500) * 86400000;
+  const rec = {
+    input: String(input).trim(),
+    v: e.v,
+    reason: String(opts.reason || '').slice(0, 200),
+    addedAt: new Date().toISOString(),
+    addedBy: String(opts.by || '').slice(0, 80),
+    expiresAt,
+  };
+  if (e.v === 4) { rec.lo = e.lo; rec.hi = e.hi; }
+  else { rec.loHex = e.lo.toString(16).padStart(32, '0'); rec.hiHex = e.hi.toString(16).padStart(32, '0'); }
+
+  const existed = customList.some((x) => x.input === rec.input);
+  customList = customList.filter((x) => x.input !== rec.input); // thay thế nếu trùng
+  if (!existed && customList.length >= MAX_CUSTOM) {
+    const err = new Error(`Danh sách chặn thủ công đã đạt trần ${MAX_CUSTOM.toLocaleString()}.`); err.status = 429; throw err;
+  }
+  customList.push(rec);
+  rebuildCustomIndex();
+  persistCustom();
+  return publicCustom(rec);
+}
+
+/** Xóa 1 mục theo input gốc. Trả true nếu có xóa. */
+export function removeCustom(input) {
+  const key = String(input).trim();
+  const before = customList.length;
+  customList = customList.filter((x) => x.input !== key);
+  if (customList.length === before) return false;
+  rebuildCustomIndex();
+  persistCustom();
+  return true;
+}
+
+function publicCustom(e) {
+  const now = nowMs();
+  return {
+    input: e.input, v: e.v, reason: e.reason || '', addedAt: e.addedAt, addedBy: e.addedBy || '',
+    expiresAt: e.expiresAt, permanent: e.expiresAt === null,
+    expired: e.expiresAt !== null && e.expiresAt <= now,
+  };
+}
+export function listCustom() { return customList.map(publicCustom); }
+
+/** Dọn các mục đã hết hạn (giải phóng bộ nhớ + gọn danh sách). */
+export function cleanupCustom() {
+  const now = nowMs();
+  const before = customList.length;
+  customList = customList.filter((e) => e.expiresAt === null || e.expiresAt > now);
+  if (customList.length !== before) { rebuildCustomIndex(); persistCustom(); }
+  return before - customList.length;
+}
+export function customActiveCount() {
+  const now = nowMs();
+  return customList.reduce((n, e) => n + (e.expiresAt === null || e.expiresAt > now ? 1 : 0), 0);
+}
 
 // Đếm số lần IP bị chặn/đánh dấu (từ lúc panel khởi động) — hiển thị ở UI.
 let hits = 0;
@@ -251,7 +382,12 @@ function subsystemActive() {
 /** Nạp dữ liệu sẵn có lúc khởi động + lên lịch build mỗi ngày 00:00. Tải ngay nếu cần mà chưa có data. */
 export function startScheduler() {
   load();
+  loadCustom();
+  cleanupCustom();
   scheduleNextMidnight();
+  // Dọn custom hết hạn mỗi giờ.
+  const t = setInterval(() => cleanupCustom(), 3600 * 1000);
+  t.unref?.();
   if (subsystemActive() && getSettings().firewallAutoUpdate && !loaded) {
     refresh('khởi tạo lần đầu').catch(() => {});
   }
@@ -287,6 +423,7 @@ export function stats() {
     rawEntries: meta?.rawEntries ?? 0,
     memoryBytes: v4.byteLength + v6lo.length * 32,
     hits,
+    customCount: customActiveCount(),
     lastError,
     sourceUrl: getSettings().firewallSourceUrl,
   };
