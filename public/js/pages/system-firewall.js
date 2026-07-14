@@ -38,8 +38,12 @@ Pages['system/firewall'] = {
       ${UI.statCard({ label: 'Đã chặn/đánh dấu', value: num(st.hits) })}
     </div>`;
 
+    const apiPill = st.apiEnabled
+      ? '<span class="text-emerald-400">Đang bật</span> <span class="text-zinc-500">· dịch vụ ngoài gọi được /api/fw/*</span>'
+      : '<span class="text-zinc-400">Đang tắt</span> <span class="text-zinc-600">· bật trong Configs để chia sẻ</span>';
     const infoCard = UI.card('Trạng thái blacklist', `<div class="p-4 text-sm space-y-1.5">
-      <div><span class="text-zinc-500 inline-block w-40">Firewall</span> ${statusPill}</div>
+      <div><span class="text-zinc-500 inline-block w-40">Chặn panel</span> ${statusPill}</div>
+      <div><span class="text-zinc-500 inline-block w-40">Firewall API</span> ${apiPill}</div>
       <div><span class="text-zinc-500 inline-block w-40">Tự cập nhật</span> ${st.autoUpdate ? 'Bật — mỗi ngày 00:00' : 'Tắt'}</div>
       <div><span class="text-zinc-500 inline-block w-40">Nguồn</span> <span class="font-mono text-xs text-zinc-400 break-all">${F.escapeHtml(st.sourceUrl || '')}</span></div>
       <div><span class="text-zinc-500 inline-block w-40">Build gần nhất</span> ${F.escapeHtml(built)}</div>
@@ -59,8 +63,9 @@ Pages['system/firewall'] = {
     </div>`);
 
     // ---- API keys ----
+    const keyApiNote = st.apiEnabled ? '' : '<div class="mx-4 mt-3 rounded-lg bg-amber-900/20 border border-amber-700/50 p-2.5 text-[11px] text-amber-200">Firewall API đang <b>tắt</b> — key tạo ở đây chưa dùng được cho tới khi bật "Firewall API" trong <b>Configs</b>.</div>';
     const keysCard = canKeys ? UI.card('API key (chia sẻ tra cứu)',
-      '<div id="fw-keys" class="p-4"></div>',
+      `${keyApiNote}<div id="fw-keys" class="p-4"></div>`,
       UI.btn('Tạo API key', { size: 'sm', variant: 'primary', attrs: 'id="fw-add-key"' })) : '';
 
     root.innerHTML = `<div class="p-6 space-y-5">

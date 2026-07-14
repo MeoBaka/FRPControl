@@ -242,13 +242,25 @@ export function refresh(reason = 'manual') {
     .catch((err) => { lastError = err.message; console.error(`[FRPControl] Firewall: cập nhật lỗi — ${err.message}`); throw err; });
 }
 
-/** Nạp dữ liệu sẵn có lúc khởi động + lên lịch build mỗi ngày 00:00. Tải ngay nếu bật mà chưa có data. */
+/** Subsystem "đang cần blacklist": khi CHẶN panel HOẶC API công khai được bật. */
+function subsystemActive() {
+  const s = getSettings();
+  return s.firewallEnabled || s.firewallApiEnabled;
+}
+
+/** Nạp dữ liệu sẵn có lúc khởi động + lên lịch build mỗi ngày 00:00. Tải ngay nếu cần mà chưa có data. */
 export function startScheduler() {
   load();
   scheduleNextMidnight();
-  const s = getSettings();
-  if (s.firewallEnabled && s.firewallAutoUpdate && !loaded) {
+  if (subsystemActive() && getSettings().firewallAutoUpdate && !loaded) {
     refresh('khởi tạo lần đầu').catch(() => {});
+  }
+}
+
+/** Gọi sau khi đổi settings: nếu vừa bật firewall/API mà chưa có data thì tải nền ngay. */
+export function ensureData() {
+  if (subsystemActive() && getSettings().firewallAutoUpdate && !loaded && !building) {
+    refresh('vừa bật firewall/API').catch(() => {});
   }
 }
 
@@ -259,7 +271,7 @@ function scheduleNextMidnight() {
   next.setHours(24, 0, 0, 0); // 00:00 ngày kế tiếp (giờ máy chủ)
   const ms = next.getTime() - now.getTime();
   dailyTimer = setTimeout(() => {
-    if (getSettings().firewallAutoUpdate) refresh('lịch 00:00 hàng ngày').catch(() => {});
+    if (subsystemActive() && getSettings().firewallAutoUpdate) refresh('lịch 00:00 hàng ngày').catch(() => {});
     scheduleNextMidnight(); // tự đặt lại cho ngày kế (tránh trôi giờ/DST)
   }, ms);
   dailyTimer.unref?.();

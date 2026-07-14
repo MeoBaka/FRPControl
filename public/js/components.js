@@ -95,7 +95,8 @@ window.UI = (() => {
       danger: 'border border-red-800 text-red-400 hover:bg-red-900/30',
     };
     const sizes = { sm: 'text-xs px-2.5 py-1.5', md: 'text-sm px-3 py-2' };
-    return `<button class="rounded-lg transition ${variants[variant]} ${sizes[size]}" ${attrs}>${label}</button>`;
+    // type="button" mặc định: nút trong <form> KHÔNG submit kiểu GET (chống lộ field lên URL).
+    return `<button type="button" class="rounded-lg transition ${variants[variant]} ${sizes[size]}" ${attrs}>${label}</button>`;
   }
 
   // ---------------- Selector provider/node (top toolbar) ----------------

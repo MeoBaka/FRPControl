@@ -459,6 +459,10 @@ window.App = (() => {
 
   async function init() {
     window.addEventListener('hashchange', route);
+    // CHẶN native form submit toàn cục (SPA dùng AJAX): tránh submit kiểu GET đẩy toàn bộ
+    // field lên URL (lộ IP/securityEntrance... trong history/log/referer). Handler riêng của
+    // từng form (vd login) vẫn chạy — preventDefault chỉ hủy điều hướng mặc định.
+    document.addEventListener('submit', (e) => e.preventDefault());
     document.getElementById('header-back')?.addEventListener('click', goBack);
     // Đóng menu user khi click ra ngoài
     document.addEventListener('click', (e) => {

@@ -33,10 +33,12 @@ const DEFAULTS = {
   securityEntrance: '',       // path bí mật để vào panel ('' = tắt), vd /f5bce1a2
 
   // ---- Firewall / IP blacklist ----
-  firewallEnabled: false,     // bật chặn IP nằm trong blacklist ở tầng panel
-  firewallMode: 'block',      // 'block' = trả 403 | 'monitor' = chỉ ghi cảnh báo, không chặn
+  // 2 công tắc ĐỘC LẬP (đều cần blacklist data — data được duy trì nếu BẤT KỲ cái nào bật):
+  firewallEnabled: false,     // CHẶN panel: request từ IP blacklist bị 403/đếm
+  firewallApiEnabled: false,  // API tra cứu công khai /api/fw/* (chia sẻ) — không liên quan chặn panel
+  firewallMode: 'block',      // (chỉ khi firewallEnabled) 'block' = 403 | 'monitor' = chỉ đếm
   firewallSourceUrl: 'https://raw.githubusercontent.com/bitwire-it/ipblocklist/main/inbound.txt',
-  firewallAutoUpdate: true,   // tự tải nguồn + build lại mỗi ngày 00:00
+  firewallAutoUpdate: true,   // tự tải nguồn + build lại mỗi ngày 00:00 (khi firewall/API bật)
 };
 
 let cache = null;
@@ -99,6 +101,7 @@ export function previewSettings(patch) {
   if (patch.securityEntrance !== undefined) next.securityEntrance = normalizeEntrance(patch.securityEntrance);
 
   if (patch.firewallEnabled !== undefined) next.firewallEnabled = bool(patch.firewallEnabled);
+  if (patch.firewallApiEnabled !== undefined) next.firewallApiEnabled = bool(patch.firewallApiEnabled);
   if (patch.firewallMode !== undefined) next.firewallMode = patch.firewallMode === 'monitor' ? 'monitor' : 'block';
   if (patch.firewallSourceUrl !== undefined) {
     const u = String(patch.firewallSourceUrl).trim();

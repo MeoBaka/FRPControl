@@ -9,6 +9,7 @@ import { ASSIGN_ACTIONS, ASSIGN_LABELS } from '../services/access.service.js';
 import * as runtime from '../runtime.js';
 import * as ssl from '../services/ssl.service.js';
 import * as certs from '../services/cert.service.js';
+import * as blacklist from '../services/blacklist.service.js';
 
 // ---------------- Users ----------------
 export async function listUsers(req, res, next) {
@@ -241,6 +242,7 @@ export async function updateSettings(req, res, next) {
 
     if (listenerChanged) await runtime.checkListen(desired); // KIỂM TRA port/cert TRƯỚC — lỗi thì không lưu
     settings.commitSettings(nextS);
+    blacklist.ensureData(); // vừa bật firewall/API mà chưa có blacklist -> tải nền ngay
 
     if (listenerChanged) {
       // Chuyển listener SAU khi đã trả response (đã checkListen nên gần như chắc chắn thành công).

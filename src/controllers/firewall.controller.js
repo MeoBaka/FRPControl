@@ -35,6 +35,7 @@ export function stats(req, res) {
   res.json({
     ...bl.stats(),
     enabled: s.firewallEnabled,
+    apiEnabled: s.firewallApiEnabled,
     mode: s.firewallMode,
     autoUpdate: s.firewallAutoUpdate,
     keyCount: keys.listKeys().length,
@@ -66,6 +67,7 @@ export function deleteKey(req, res) {
 
 // ---------------- Public API (xác thực bằng API key) ----------------
 export function apiKeyAuth(req, res, next) {
+  if (!getSettings().firewallApiEnabled) return res.status(403).json({ error: 'Firewall API đang tắt.' });
   const header = req.get('authorization') || '';
   const raw = req.get('x-api-key') || (req.query.key ? String(req.query.key) : '') || header.replace(/^Bearer\s+/i, '');
   const rec = keys.verifyKey(raw);
