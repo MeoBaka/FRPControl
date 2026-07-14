@@ -113,6 +113,8 @@ window.API = (() => {
     client: (id, key) => request('GET', `/monitor/${id}/clients/${encodeURIComponent(key)}`),
     clearOffline: (id) => request('DELETE', `/monitor/${id}/proxies/offline`),
     traffic: (id, name) => request('GET', `/monitor/${id}/traffic/${encodeURIComponent(name)}`),
+    providerFirewall: (id) => request('GET', `/monitor/${id}/firewall`),
+    putProviderFirewall: (id, body) => request('PUT', `/monitor/${id}/firewall`, body),
 
     // Node (frpc) — config file tổng
     getConfig: (id) => request('GET', `/monitor/${id}/config`),

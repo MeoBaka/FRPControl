@@ -158,6 +158,26 @@ export async function proxyTraffic(req, res, next) {
   }
 }
 
+/** [frps · fork] Đọc cấu hình firewall native của frps. */
+export async function providerFirewall(req, res, next) {
+  const instance = await loadFrps(req, res);
+  if (!instance) return;
+  try { res.json(await frps.getFirewall(instance)); }
+  catch (err) { next(err); }
+}
+
+/** [frps · fork] Ghi cấu hình firewall native của frps. */
+export async function putProviderFirewall(req, res, next) {
+  const instance = await loadFrps(req, res);
+  if (!instance) return;
+  try {
+    const body = req.body || {};
+    const rules = Array.isArray(body.rules) ? body.rules.length : 0;
+    req._auditDetail = `firewall frps: ${body.enabled ? 'bật' : 'tắt'}, default=${body.default}, ${rules} rule, provider=${body.provider?.mode || 'off'}`;
+    res.json(await frps.putFirewall(instance, body));
+  } catch (err) { next(err); }
+}
+
 // ==================== FRPS: Clients ====================
 
 async function loadFrps(req, res) {

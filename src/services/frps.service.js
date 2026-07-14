@@ -27,6 +27,16 @@ export function getClients(instance) {
   return callFrpApi(instance, '/api/clients');
 }
 
+/** [fork] Firewall native của frps: đọc snapshot { enabled, default, rules, provider }. */
+export function getFirewall(instance) {
+  return callFrpApi(instance, '/api/firewall');
+}
+
+/** [fork] Ghi cấu hình firewall của frps. */
+export function putFirewall(instance, body) {
+  return callFrpApi(instance, '/api/firewall', { method: 'PUT', body });
+}
+
 /** Chi tiết 1 client theo key/runID. */
 export function getClient(instance, key) {
   return callFrpApi(instance, `/api/clients/${encodeURIComponent(key)}`);

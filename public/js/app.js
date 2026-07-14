@@ -17,6 +17,7 @@ window.App = (() => {
     { type: 'item', route: 'providers/status', label: 'Status', icon: ICONS.status, anyPerm: ['monitoring.view'], orAssigned: true },
     { type: 'item', route: 'providers/clients', label: 'Clients', icon: ICONS.clients, anyPerm: ['monitoring.view'], orAssigned: true },
     { type: 'item', route: 'providers/proxies', label: 'Proxies', icon: ICONS.proxies, anyPerm: ['monitoring.view'], orAssigned: true },
+    { type: 'item', route: 'providers/firewall', label: 'Firewall', icon: ICONS.firewall, anyPerm: ['monitoring.view'], orAssigned: true },
     { type: 'section', label: 'Nodes · FRPC', anyPerm: ['nodes.view', 'monitoring.view'], orAssigned: true },
     { type: 'item', route: 'nodes', label: 'Nodes', icon: ICONS.node, anyPerm: ['nodes.view'], orAssigned: true },
     { type: 'item', route: 'nodes/proxies', label: 'Proxies', icon: ICONS.proxies, anyPerm: ['monitoring.view', 'proxies.view'], orAssigned: true },

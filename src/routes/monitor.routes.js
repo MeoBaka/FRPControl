@@ -19,6 +19,10 @@ router.get('/:id/clients/:key', canView, ctrl.providerClient);
 router.get('/:id/traffic/:name', canView, ctrl.proxyTraffic);
 router.delete('/:id/proxies/offline', instanceCap('proxies.delete', 'update'), ctrl.clearOffline);
 
+// frps — firewall native (fork)
+router.get('/:id/firewall', canView, ctrl.providerFirewall);
+router.put('/:id/firewall', instanceCap('providers.update', 'update'), ctrl.putProviderFirewall);
+
 // frpc — config
 router.get('/:id/config', instanceCap('configs.view', 'monitor'), ctrl.getConfig);
 router.put('/:id/config', instanceCap('configs.update', 'update'), ctrl.putConfig);
