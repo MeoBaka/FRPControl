@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as ctrl from '../controllers/system.controller.js';
+import * as fw from '../controllers/firewall.controller.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 
 const router = Router();
@@ -42,5 +43,13 @@ router.get('/ael', requirePermission('ael.view'), ctrl.listApiErrors);
 // Settings
 router.get('/settings', requirePermission('settings.view'), ctrl.getSettings);
 router.put('/settings', requirePermission('settings.update'), ctrl.updateSettings);
+
+// Firewall (quản lý trong panel)
+router.get('/firewall/stats', requirePermission('firewall.view'), fw.stats);
+router.post('/firewall/check', requirePermission('firewall.view'), fw.check);
+router.post('/firewall/refresh', requirePermission('firewall.update'), fw.refresh);
+router.get('/firewall/keys', requirePermission('firewall.keys'), fw.listKeys);
+router.post('/firewall/keys', requirePermission('firewall.keys'), fw.createKey);
+router.delete('/firewall/keys/:id', requirePermission('firewall.keys'), fw.deleteKey);
 
 export default router;

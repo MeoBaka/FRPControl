@@ -2,12 +2,14 @@ import { createApp } from './src/app.js';
 import { config } from './src/config.js';
 import { bootstrap } from './src/services/bootstrap.js';
 import { startServer, getListenInfo, startRenewScheduler } from './src/runtime.js';
+import { startScheduler as startFirewallScheduler } from './src/services/blacklist.service.js';
 
 const seeded = await bootstrap();
 const app = createApp();
 
 await startServer(app);
 startRenewScheduler();
+startFirewallScheduler();
 const info = getListenInfo();
 const scheme = info.ssl ? 'https' : 'http';
 const hostShown = info.host || 'localhost';

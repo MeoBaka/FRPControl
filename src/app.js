@@ -1,8 +1,10 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import apiRoutes from './routes/index.js';
+import firewallPublicRoutes from './routes/firewall.public.routes.js';
 import { config } from './config.js';
 import { attachUser, force2faGuard } from './middleware/auth.js';
+import { firewallMiddleware } from './middleware/firewall.js';
 import { auditMiddleware } from './middleware/audit.js';
 import { apiErrorLogger } from './middleware/apiError.js';
 import { getSettings } from './services/settings.service.js';
@@ -54,8 +56,13 @@ export function createApp() {
     res.type('text/plain').send(keyAuth);
   });
 
+  // Firewall API công khai (API key) — TRƯỚC panelGuard để dịch vụ ngoài luôn gọi được.
+  app.use('/api/fw', express.json({ limit: '1mb' }), firewallPublicRoutes);
+
   // Cổng vào panel (Domain / Security Entrance) — đặt TRƯỚC mọi thứ để ẩn hoàn toàn panel.
   app.use(panelGuard);
+  // Firewall: chặn IP trong blacklist (sau panelGuard, trước khi làm gì thêm).
+  app.use(firewallMiddleware);
   app.use(express.json({ limit: '1mb' }));
 
   // Nạp user từ cookie phiên + ghi audit + ghi API error log + bắt buộc 2FA cho mọi request /api

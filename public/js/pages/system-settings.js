@@ -95,6 +95,22 @@ Pages['system/settings'] = {
           </div>
         </div>`)}
 
+        ${UI.card('Firewall (IP blacklist)', `<div class="p-5 space-y-4">
+          ${checkbox('Bật Firewall — chặn IP nằm trong blacklist', 'firewallEnabled', settings.firewallEnabled, 'Chặn request tới panel từ IP xấu. Localhost luôn được bỏ qua (chống tự khóa). Quản lý & tra cứu ở <b>System → Firewall</b>.')}
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs text-zinc-400 mb-1">Chế độ</label>
+              <select name="firewallMode" ${canUpdate ? '' : 'disabled'} class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none">
+                <option value="block" ${settings.firewallMode !== 'monitor' ? 'selected' : ''}>Chặn (trả 403)</option>
+                <option value="monitor" ${settings.firewallMode === 'monitor' ? 'selected' : ''}>Giám sát (không chặn, chỉ đếm)</option>
+              </select>
+              <p class="text-[11px] text-zinc-500 mt-1">Dùng <b>Giám sát</b> để thử trước khi bật chặn thật.</p>
+            </div>
+            <div class="flex items-start pt-6">${checkbox('Tự cập nhật mỗi ngày 00:00', 'firewallAutoUpdate', settings.firewallAutoUpdate, 'Tự tải lại nguồn + build lại nhị phân hàng ngày.')}</div>
+          </div>
+          ${field('Nguồn blacklist (URL)', 'firewallSourceUrl', settings.firewallSourceUrl, { full: true, ph: 'https://…/inbound.txt', hint: 'File text mỗi dòng 1 IP hoặc CIDR. Mặc định: bitwire-it/ipblocklist.' })}
+        </div>`)}
+
         <div id="settings-error" class="hidden rounded-lg px-3 py-2 text-sm bg-red-900/40 border border-red-700 text-red-200"></div>
         ${canUpdate ? `<div>${UI.btn('Lưu cấu hình', { variant: 'primary', attrs: 'id="settings-save"' })}</div>` : '<p class="text-xs text-zinc-500">Bạn không có quyền sửa cấu hình.</p>'}
       </form>
@@ -136,6 +152,10 @@ Pages['system/settings'] = {
         strongPassword: f.strongPassword.checked,
         panelDomain: f.panelDomain.value.trim(),
         securityEntrance: f.securityEntrance.value.trim(),
+        firewallEnabled: f.firewallEnabled.checked,
+        firewallMode: f.firewallMode.value,
+        firewallAutoUpdate: f.firewallAutoUpdate.checked,
+        firewallSourceUrl: f.firewallSourceUrl.value.trim(),
       };
       try {
         const res = await API.updateSettings(payload);

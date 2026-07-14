@@ -24,6 +24,7 @@ export const PERMISSION_CATALOG = [
   { resource: 'ael', label: 'API Error Logs', actions: ['view'] },
   { resource: 'settings', label: 'Configs (web)', actions: ['view', 'update'] },
   { resource: 'certs', label: 'Cert Manager', actions: ['view', 'create', 'download', 'delete'] },
+  { resource: 'firewall', label: 'Firewall (IP blacklist)', actions: ['view', 'update', 'keys'] },
   { resource: 'security', label: 'Bảo mật', actions: ['req2fa'] },
 ];
 

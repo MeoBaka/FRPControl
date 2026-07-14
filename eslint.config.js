@@ -15,7 +15,7 @@ export default [
 
   // Backend: Node.js ESM
   {
-    files: ['src/**/*.js', 'server.js', 'eslint.config.js'],
+    files: ['src/**/*.js', 'scripts/**/*.js', 'server.js', 'eslint.config.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',

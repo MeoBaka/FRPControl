@@ -31,6 +31,12 @@ const DEFAULTS = {
   strongPassword: false,      // bắt buộc mật khẩu mạnh (>=8, hoa/thường/số/ký tự đặc biệt)
   panelDomain: '',            // chỉ cho truy cập panel qua domain này ('' = mọi host)
   securityEntrance: '',       // path bí mật để vào panel ('' = tắt), vd /f5bce1a2
+
+  // ---- Firewall / IP blacklist ----
+  firewallEnabled: false,     // bật chặn IP nằm trong blacklist ở tầng panel
+  firewallMode: 'block',      // 'block' = trả 403 | 'monitor' = chỉ ghi cảnh báo, không chặn
+  firewallSourceUrl: 'https://raw.githubusercontent.com/bitwire-it/ipblocklist/main/inbound.txt',
+  firewallAutoUpdate: true,   // tự tải nguồn + build lại mỗi ngày 00:00
 };
 
 let cache = null;
@@ -91,6 +97,15 @@ export function previewSettings(patch) {
   if (patch.strongPassword !== undefined) next.strongPassword = bool(patch.strongPassword);
   if (patch.panelDomain !== undefined) next.panelDomain = normalizeDomain(patch.panelDomain);
   if (patch.securityEntrance !== undefined) next.securityEntrance = normalizeEntrance(patch.securityEntrance);
+
+  if (patch.firewallEnabled !== undefined) next.firewallEnabled = bool(patch.firewallEnabled);
+  if (patch.firewallMode !== undefined) next.firewallMode = patch.firewallMode === 'monitor' ? 'monitor' : 'block';
+  if (patch.firewallSourceUrl !== undefined) {
+    const u = String(patch.firewallSourceUrl).trim();
+    if (u && !/^https?:\/\//i.test(u)) { const e = new Error('Firewall source URL phải bắt đầu bằng http(s)://'); e.status = 400; throw e; }
+    next.firewallSourceUrl = u || DEFAULTS.firewallSourceUrl;
+  }
+  if (patch.firewallAutoUpdate !== undefined) next.firewallAutoUpdate = bool(patch.firewallAutoUpdate);
 
   if (next.panelSSL) {
     // Bật SSL bắt buộc có Server IP + Port (cert tự tạo gắn theo IP; panel có địa chỉ rõ ràng).

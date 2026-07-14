@@ -6,7 +6,7 @@ window.App = (() => {
     clients: icon('fa-users'), proxies: icon('fa-right-left'), node: icon('fa-microchip'),
     visitors: icon('fa-user-shield'), config: icon('fa-file-code'),
     users: icon('fa-user-group'), roles: icon('fa-user-lock'), audit: icon('fa-clipboard-list'), settings: icon('fa-gear'),
-    certs: icon('fa-certificate'), ael: icon('fa-triangle-exclamation'),
+    certs: icon('fa-certificate'), ael: icon('fa-triangle-exclamation'), firewall: icon('fa-shield-halved'),
   };
 
   // anyPerm: hiện item nếu có BẤT KỲ quyền nào trong danh sách (rỗng = luôn hiện)
@@ -26,6 +26,7 @@ window.App = (() => {
     { type: 'item', route: 'system/users', label: 'User Manager', icon: ICONS.users, anyPerm: ['users.view'] },
     { type: 'item', route: 'system/roles', label: 'Role Manager', icon: ICONS.roles, anyPerm: ['roles.view'] },
     { type: 'item', route: 'system/certs', label: 'Cert Manager', icon: ICONS.certs, anyPerm: ['certs.view'] },
+    { type: 'item', route: 'system/firewall', label: 'Firewall', icon: ICONS.firewall, anyPerm: ['firewall.view'] },
     { type: 'item', route: 'system/audit', label: 'Audit Logs', icon: ICONS.audit, anyPerm: ['audit.view'] },
     { type: 'item', route: 'system/ael', label: 'API Error Logs', icon: ICONS.ael, anyPerm: ['ael.view'] },
     { type: 'item', route: 'system/settings', label: 'Configs', icon: ICONS.settings, anyPerm: ['settings.view'] },
