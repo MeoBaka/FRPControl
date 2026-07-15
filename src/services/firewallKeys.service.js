@@ -1,13 +1,14 @@
 /**
  * API key cho Firewall API công khai (chia sẻ dịch vụ check IP).
  *
- * - Key được sinh ngẫu nhiên, CHỈ hiện raw MỘT LẦN lúc tạo; lưu dạng SHA-256.
- * - File data/firewall-keys.json (đã .gitignore theo data/).
- * - Xác thực: hash key gửi lên rồi so khớp -> O(n) trên số key (rất nhỏ).
+ * - Xác thực bằng SHA-256 (so khớp nhanh).
+ * - Raw key lưu thêm dạng AES-256-GCM (encryptSecret) để có thể COPY lại sau
+ *   (giống cách lưu mật khẩu FRP). File data/firewall-keys.json (đã .gitignore).
  */
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { config } from '../config.js';
+import { encryptSecret, decryptSecret } from '../utils/crypto.js';
 
 const FILE = `${config.dataDir}/firewall-keys.json`;
 let cache = null;
@@ -26,17 +27,23 @@ function persist() {
 }
 function sha256(s) { return crypto.createHash('sha256').update(s).digest('hex'); }
 
-/** Bỏ hash khỏi bản ghi trước khi trả về client. */
+/** Bỏ hash + secret khỏi bản ghi trước khi trả về client. */
 function toPublic(k) {
-  const { hash, ...rest } = k;
+  const { hash, secret, ...rest } = k;
   return rest;
 }
-
-export function listKeys() {
-  return loadAll().map(toPublic);
+/** Giải mã raw key (null nếu key cũ chưa lưu secret / khóa đổi). */
+function revealRaw(k) {
+  if (!k.secret) return null;
+  try { return decryptSecret(k.secret); } catch { return null; }
 }
 
-/** Tạo key mới. Trả bản ghi + `key` raw (hiện 1 lần duy nhất). canAdd = cho phép THÊM IP chặn. */
+/** listKeys kèm `key` = raw (để copy); null với key cũ chưa lưu raw. */
+export function listKeys() {
+  return loadAll().map((k) => ({ ...toPublic(k), key: revealRaw(k) }));
+}
+
+/** Tạo key mới. Trả bản ghi + `key` raw. canAdd = cho phép THÊM IP chặn. */
 export function createKey(name, canAdd = false) {
   loadAll();
   const raw = 'fwk_' + crypto.randomBytes(24).toString('hex'); // 48 hex
@@ -44,6 +51,7 @@ export function createKey(name, canAdd = false) {
     id: crypto.randomUUID(),
     name: String(name || '').trim().slice(0, 80) || 'API key',
     hash: sha256(raw),
+    secret: encryptSecret(raw), // raw mã hóa để copy lại sau
     prefix: raw.slice(0, 12),
     canAdd: Boolean(canAdd),
     createdAt: new Date().toISOString(),
@@ -53,6 +61,17 @@ export function createKey(name, canAdd = false) {
   cache.push(rec);
   persist();
   return { ...toPublic(rec), key: raw };
+}
+
+/** Sửa quyền/tên key. Trả bản ghi public (kèm raw) hoặc null nếu không thấy. */
+export function updateKey(id, patch = {}) {
+  loadAll();
+  const rec = cache.find((k) => k.id === id);
+  if (!rec) return null;
+  if (patch.name !== undefined) { const n = String(patch.name).trim().slice(0, 80); if (n) rec.name = n; }
+  if (patch.canAdd !== undefined) rec.canAdd = Boolean(patch.canAdd);
+  persist();
+  return { ...toPublic(rec), key: revealRaw(rec) };
 }
 
 export function deleteKey(id) {

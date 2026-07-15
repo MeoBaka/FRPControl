@@ -143,6 +143,10 @@ Pages['system/firewall'] = {
       await drawKeys(root.querySelector('#fw-keys'), F);
       root.querySelector('#fw-add-key').addEventListener('click', () => openCreateKey(root, F));
       root.querySelector('#fw-keys').addEventListener('click', async (e) => {
+        const copy = e.target.closest('[data-copy-key]');
+        if (copy) { navigator.clipboard?.writeText(copy.dataset.copyKey); UI.toast('Đã copy API key.', 'success'); return; }
+        const edit = e.target.closest('[data-edit-key]');
+        if (edit) { openEditKey(root, F, edit.dataset.editKey, edit.dataset.canAdd === '1', edit.dataset.keyName); return; }
         const del = e.target.closest('[data-del-key]'); if (!del) return;
         if (!confirm(`Xóa API key "${del.dataset.name}"? Dịch vụ đang dùng key này sẽ mất quyền tra cứu.`)) return;
         try { await API.firewallDeleteKey(del.dataset.delKey); UI.toast('Đã xóa key.', 'success'); await drawKeys(root.querySelector('#fw-keys'), F); }
@@ -162,7 +166,11 @@ async function drawKeys(mount, F) {
     <td class="px-3 py-2 text-xs text-zinc-400">${new Date(k.createdAt).toLocaleDateString('vi-VN')}</td>
     <td class="px-3 py-2 text-xs text-zinc-400">${k.lastUsedAt ? F.timeAgo(k.lastUsedAt) : '—'}</td>
     <td class="px-3 py-2 text-xs tabular-nums">${Number(k.requests || 0).toLocaleString('vi-VN')}</td>
-    <td class="px-3 py-2 text-right">${UI.btn('Xóa', { size: 'sm', variant: 'danger', attrs: `data-del-key="${k.id}" data-name="${F.escapeHtml(k.name)}"` })}</td>
+    <td class="px-3 py-2 text-right whitespace-nowrap space-x-1">
+      ${k.key ? UI.btn('Copy', { size: 'sm', attrs: `data-copy-key="${F.escapeHtml(k.key)}"` }) : UI.btn('Copy', { size: 'sm', attrs: 'disabled title="Key cũ không lưu raw"' })}
+      ${UI.btn('Sửa', { size: 'sm', attrs: `data-edit-key="${k.id}" data-can-add="${k.canAdd ? 1 : 0}" data-key-name="${F.escapeHtml(k.name)}"` })}
+      ${UI.btn('Xóa', { size: 'sm', variant: 'danger', attrs: `data-del-key="${k.id}" data-name="${F.escapeHtml(k.name)}"` })}
+    </td>
   </tr>`).join('');
   mount.innerHTML = `<div class="overflow-x-auto"><table class="w-full text-sm">
     <thead class="text-xs text-zinc-500"><tr><th class="px-3 py-1.5 text-left">Tên</th><th class="px-3 py-1.5 text-left">Prefix</th><th class="px-3 py-1.5 text-left">Quyền</th><th class="px-3 py-1.5 text-left">Tạo</th><th class="px-3 py-1.5 text-left">Dùng lần cuối</th><th class="px-3 py-1.5 text-left">Requests</th><th></th></tr></thead>
@@ -214,7 +222,7 @@ function openCreateKey(root, F) {
           const out = el.querySelector('#fw-key-out');
           out.classList.remove('hidden');
           out.innerHTML = `<div class="rounded-lg bg-amber-900/20 border border-amber-700/50 p-3 text-xs text-amber-200 space-y-2">
-            <div>Key chỉ hiện <b>MỘT LẦN</b> — sao chép ngay:</div>
+            <div>API key mới (có thể <b>Copy</b> lại sau ở bảng):</div>
             <div class="flex items-center gap-2"><code class="flex-1 bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 font-mono text-emerald-300 break-all">${F.escapeHtml(key.key)}</code>
               <button type="button" id="fw-copy" class="px-2 py-1 rounded border border-zinc-700 text-zinc-200 hover:bg-zinc-800">Copy</button></div>
           </div>`;
@@ -223,6 +231,34 @@ function openCreateKey(root, F) {
           el.querySelector('[name="name"]').disabled = true;
           drawKeys(root.querySelector('#fw-keys'), Fmt);
         } catch (err) { UI.toast('Tạo key lỗi: ' + err.message, 'error'); }
+      });
+    },
+  });
+}
+
+function openEditKey(root, F, id, canAdd, name) {
+  UI.openModal({
+    title: 'Sửa API key',
+    body: `<form id="fw-key-edit" class="space-y-3">
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Tên gợi nhớ</label>
+        <input name="name" value="${F.escapeHtml(name || '')}" class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none" />
+      </div>
+      <label class="flex items-start gap-2 text-sm text-zinc-300">
+        <input type="checkbox" name="canAdd" ${canAdd ? 'checked' : ''} class="mt-0.5 rounded bg-zinc-800 border-zinc-700" />
+        <span>Cho phép <b>thêm IP chặn</b> (gọi <span class="font-mono">POST /api/fw/block</span>)</span>
+      </label>
+    </form>`,
+    footer: UI.btn('Hủy', { attrs: 'data-modal-close' }) + UI.btn('Lưu', { variant: 'primary', attrs: 'id="fw-key-save"' }),
+    onMount(el) {
+      el.querySelector('#fw-key-save').addEventListener('click', async () => {
+        const f = el.querySelector('#fw-key-edit').elements;
+        try {
+          await API.firewallUpdateKey(id, { name: f.name.value.trim(), canAdd: f.canAdd.checked });
+          UI.toast('Đã cập nhật key.', 'success');
+          UI.closeModal();
+          await drawKeys(root.querySelector('#fw-keys'), F);
+        } catch (err) { UI.toast('Lưu lỗi: ' + err.message, 'error'); }
       });
     },
   });

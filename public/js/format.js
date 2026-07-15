@@ -18,9 +18,15 @@ window.Fmt = (() => {
   }
 
   // Unix seconds -> "x phút trước"
-  function timeAgo(unixSec) {
-    if (!unixSec) return '—';
-    const diff = Math.floor(Date.now() / 1000) - Number(unixSec);
+  // Nhận: unix GIÂY, unix MS, chuỗi số, hoặc chuỗi ISO ("2026-..."). Không hợp lệ -> "—".
+  function timeAgo(ts) {
+    if (ts === null || ts === undefined || ts === '' || ts === 0) return '—';
+    let sec;
+    const n = Number(ts);
+    if (Number.isFinite(n)) sec = n > 1e12 ? Math.floor(n / 1000) : n; // >1e12 = mili giây
+    else { const p = Date.parse(ts); sec = Number.isFinite(p) ? Math.floor(p / 1000) : NaN; }
+    if (!Number.isFinite(sec)) return '—';
+    const diff = Math.floor(Date.now() / 1000) - sec;
     if (diff < 0) return 'vừa xong';
     const units = [
       [31536000, 'năm'],

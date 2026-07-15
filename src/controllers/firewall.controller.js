@@ -59,6 +59,13 @@ export function createKey(req, res) {
   res.status(201).json({ key: created }); // raw hiện 1 lần
 }
 
+export function updateKey(req, res) {
+  const rec = keys.updateKey(req.params.id, { canAdd: req.body?.canAdd, name: req.body?.name });
+  if (!rec) return res.status(404).json({ error: 'Không tìm thấy API key.' });
+  req._auditDetail = `sửa API key firewall "${rec.name}" (thêm IP chặn: ${rec.canAdd ? 'bật' : 'tắt'})`;
+  res.json({ key: rec });
+}
+
 export function deleteKey(req, res) {
   const ok = keys.deleteKey(req.params.id);
   if (!ok) return res.status(404).json({ error: 'Không tìm thấy API key.' });

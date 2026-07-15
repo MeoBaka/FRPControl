@@ -50,6 +50,7 @@ router.post('/firewall/check', requirePermission('firewall.view'), fw.check);
 router.post('/firewall/refresh', requirePermission('firewall.update'), fw.refresh);
 router.get('/firewall/keys', requirePermission('firewall.keys'), fw.listKeys);
 router.post('/firewall/keys', requirePermission('firewall.keys'), fw.createKey);
+router.put('/firewall/keys/:id', requirePermission('firewall.keys'), fw.updateKey);
 router.delete('/firewall/keys/:id', requirePermission('firewall.keys'), fw.deleteKey);
 // Chặn thủ công
 router.get('/firewall/custom', requirePermission('firewall.view'), fw.listCustom);

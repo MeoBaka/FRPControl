@@ -23,13 +23,15 @@ window.App = (() => {
     { type: 'item', route: 'nodes/proxies', label: 'Proxies', icon: ICONS.proxies, anyPerm: ['monitoring.view', 'proxies.view'], orAssigned: true },
     { type: 'item', route: 'nodes/visitors', label: 'Visitors', icon: ICONS.visitors, anyPerm: ['visitors.view'], orAssigned: true },
     { type: 'item', route: 'nodes/configs', label: 'Configs', icon: ICONS.config, anyPerm: ['configs.view'], orAssigned: true },
-    { type: 'section', label: 'System', anyPerm: ['users.view', 'roles.view', 'certs.view', 'audit.view', 'ael.view', 'settings.view'] },
+    { type: 'section', label: 'Manager', anyPerm: ['users.view', 'roles.view', 'certs.view'] },
     { type: 'item', route: 'system/users', label: 'User Manager', icon: ICONS.users, anyPerm: ['users.view'] },
     { type: 'item', route: 'system/roles', label: 'Role Manager', icon: ICONS.roles, anyPerm: ['roles.view'] },
     { type: 'item', route: 'system/certs', label: 'Cert Manager', icon: ICONS.certs, anyPerm: ['certs.view'] },
-    { type: 'item', route: 'system/firewall', label: 'Firewall', icon: ICONS.firewall, anyPerm: ['firewall.view'] },
+    { type: 'section', label: 'Logs', anyPerm: ['audit.view', 'ael.view'] },
     { type: 'item', route: 'system/audit', label: 'Audit Logs', icon: ICONS.audit, anyPerm: ['audit.view'] },
     { type: 'item', route: 'system/ael', label: 'API Error Logs', icon: ICONS.ael, anyPerm: ['ael.view'] },
+    { type: 'section', label: 'System', anyPerm: ['firewall.view', 'settings.view'] },
+    { type: 'item', route: 'system/firewall', label: 'Firewall', icon: ICONS.firewall, anyPerm: ['firewall.view'] },
     { type: 'item', route: 'system/settings', label: 'Configs', icon: ICONS.settings, anyPerm: ['settings.view'] },
   ];
   const ROUTE_PERM = Object.fromEntries(NAV.filter((n) => n.type === 'item').map((n) => [n.route, n.anyPerm || []]));
@@ -41,8 +43,10 @@ window.App = (() => {
   };
 
   const COLLAPSE_KEY = 'frpc.sidebarCollapsed';
+  const SECTIONS_KEY = 'frpc.navSectionsCollapsed';
   const TABS_KEY = 'frpc.openTabs';
   let collapsed = localStorage.getItem(COLLAPSE_KEY) === '1';
+  let collapsedSections = new Set(JSON.parse(localStorage.getItem(SECTIONS_KEY) || '[]'));
   let openTabs = [];
   try { openTabs = JSON.parse(localStorage.getItem(TABS_KEY) || '[]').filter((r) => Pages[r]); } catch { openTabs = []; }
   const PINNED_KEY = 'frpc.pinnedTabs';
@@ -111,9 +115,16 @@ window.App = (() => {
     const aside = document.getElementById('sidebar');
     aside.className = `shrink-0 border-r border-zinc-800 bg-zinc-900/40 flex flex-col transition-all duration-200 ${collapsed ? 'w-16' : 'w-64'}`;
 
-    const headerHtml = (it) => collapsed
-      ? `<div class="my-2 mx-2 border-t border-zinc-800/70"></div><div><div class="space-y-0.5">`
-      : `<div><div class="px-2 pb-1 text-[10px] uppercase tracking-wide text-zinc-600">${it.label}</div><div class="space-y-0.5">`;
+    // Section dạng dropdown (mở rộng): bấm header để ẩn/hiện nhóm. Thu gọn (icon) thì chỉ là gạch ngang.
+    const headerHtml = (it) => {
+      if (collapsed) return `<div class="my-2 mx-2 border-t border-zinc-800/70"></div><div><div class="space-y-0.5">`;
+      const isCol = collapsedSections.has(it.label);
+      return `<div>
+        <button type="button" data-section="${it.label}" class="w-full flex items-center justify-between px-2 pb-1 pt-1 text-[10px] uppercase tracking-wide text-zinc-600 hover:text-zinc-300 transition">
+          <span>${it.label}</span><span class="text-[9px] leading-none">${isCol ? '▸' : '▾'}</span>
+        </button>
+        <div class="space-y-0.5 ${isCol ? 'hidden' : ''}">`;
+    };
     const itemHtml = (it) => {
       const isActive = active === it.route;
       const cls = isActive ? 'bg-brand-600/15 text-brand-300 ring-1 ring-brand-500/30' : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200';
@@ -155,6 +166,13 @@ window.App = (() => {
       document.getElementById('user-menu')?.classList.add('hidden');
       if (b.dataset.userAction === 'profile') navigate('#/profile');
       else if (b.dataset.userAction === 'logout') logout();
+    }));
+    // Dropdown section: ẩn/hiện nhóm menu
+    aside.querySelectorAll('[data-section]').forEach((b) => b.addEventListener('click', () => {
+      const label = b.dataset.section;
+      if (collapsedSections.has(label)) collapsedSections.delete(label); else collapsedSections.add(label);
+      localStorage.setItem(SECTIONS_KEY, JSON.stringify([...collapsedSections]));
+      renderSidebar();
     }));
   }
 

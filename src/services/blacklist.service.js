@@ -106,13 +106,8 @@ export async function buildFromFile(srcPath) {
     }
     mLo.push(curLo); mHi.push(curHi); covered += BigInt(curHi - curLo + 1);
   }
-  const out = new Uint32Array(mLo.length * 2);
-  for (let i = 0; i < mLo.length; i++) { out[i * 2] = mLo[i]; out[i * 2 + 1] = mHi[i]; }
-  let buf = Buffer.from(out.buffer, out.byteOffset, out.byteLength);
-  if (!isLittleEndian()) { buf = Buffer.from(buf); buf.swap32(); }
-  writeAtomic(V4_BIN, buf);
 
-  // v6: sort + merge
+  // v6: sort + merge (làm TRƯỚC khi ghi để guard xét cả v4 lẫn v6).
   v6.sort((a, b) => (a.lo < b.lo ? -1 : a.lo > b.lo ? 1 : 0));
   const v6m = [];
   for (const iv of v6) {
@@ -120,6 +115,21 @@ export async function buildFromFile(srcPath) {
     if (last && iv.lo <= last.hi + 1n) { if (iv.hi > last.hi) last.hi = iv.hi; }
     else v6m.push({ lo: iv.lo, hi: iv.hi });
   }
+
+  // AN TOÀN: nguồn lỗi (rỗng / trả HTML / rate-limit) -> 0 dải hợp lệ.
+  // KHÔNG ghi đè file blacklist tốt đang có bằng file rỗng (tránh bypass firewall sau restart).
+  if (mLo.length === 0 && v6m.length === 0) {
+    const e = new Error(`Nguồn blacklist: ${total} dòng, ${invalid} không hợp lệ, 0 dải hợp lệ — BỎ QUA để giữ data cũ.`);
+    e.status = 502;
+    throw e;
+  }
+
+  const out = new Uint32Array(mLo.length * 2);
+  for (let i = 0; i < mLo.length; i++) { out[i * 2] = mLo[i]; out[i * 2 + 1] = mHi[i]; }
+  let buf = Buffer.from(out.buffer, out.byteOffset, out.byteLength);
+  if (!isLittleEndian()) { buf = Buffer.from(buf); buf.swap32(); }
+  writeAtomic(V4_BIN, buf);
+
   const toHex = (b) => b.toString(16).padStart(32, '0');
   writeAtomic(V6_JSON, JSON.stringify(v6m.map((iv) => [toHex(iv.lo), toHex(iv.hi)])));
 
@@ -167,9 +177,13 @@ export async function downloadAndBuild(url = DEFAULT_SOURCE_URL) {
   const tmp = path.join(DIR, `source-${Date.now()}.tmp`);
   try {
     fs.mkdirSync(DIR, { recursive: true });
+    console.log(`[FRPControl] Firewall: tải nguồn ${url} …`);
     await downloadToFile(url, tmp);
+    const sizeMB = (fs.statSync(tmp).size / 1048576).toFixed(1);
+    console.log(`[FRPControl] Firewall: tải xong ${sizeMB} MB, đang build nhị phân…`);
     const m = await buildFromFile(tmp);
     load();
+    console.log(`[FRPControl] Firewall: build xong ${m.ipv4Ranges.toLocaleString()} dải IPv4 (${m.buildMs}ms) — đã ghi ra đĩa + nạp RAM.`);
     return m;
   } finally {
     building = false;
@@ -178,10 +192,14 @@ export async function downloadAndBuild(url = DEFAULT_SOURCE_URL) {
 }
 
 // ============================ LOAD ============================
-/** Nạp file nhị phân vào RAM (zero-copy cho v4). Trả true nếu có dữ liệu. */
+/** Nạp file nhị phân CỤC BỘ vào RAM (zero-copy cho v4). Trả true nếu có dữ liệu. KHÔNG tải mạng. */
 export function load() {
   try {
-    if (!fs.existsSync(V4_BIN)) { loaded = false; return false; }
+    if (!fs.existsSync(V4_BIN)) {
+      loaded = false;
+      console.warn(`[FRPControl] Firewall: KHÔNG thấy file blacklist "${V4_BIN}" — chưa build/tải. Data dir: ${config.dataDir}. Bấm "Cập nhật blacklist ngay" hoặc chờ 00:00.`);
+      return false;
+    }
     const buf = fs.readFileSync(V4_BIN);
     // Uint32Array cần byteOffset chia hết 4. File lớn -> buffer riêng (offset 0), nhưng phòng xa.
     if (buf.byteOffset % 4 === 0) {
@@ -194,10 +212,17 @@ export function load() {
     v6lo = v6raw.map(([lo]) => hexToBig(lo));
     v6hi = v6raw.map(([, hi]) => hexToBig(hi));
     meta = fs.existsSync(META) ? JSON.parse(fs.readFileSync(META, 'utf8')) : null;
-    loaded = true;
-    return true;
+    const ranges = v4.length >>> 1;
+    loaded = ranges > 0;
+    if (!loaded) {
+      console.warn(`[FRPControl] Firewall: file blacklist "${V4_BIN}" RỖNG (0 dải) — coi như chưa có data.`);
+    } else {
+      console.log(`[FRPControl] Firewall: nạp ${ranges.toLocaleString()} dải IPv4 + ${v6lo.length} dải IPv6 từ file cục bộ (${(buf.length / 1048576).toFixed(1)} MB).`);
+    }
+    return loaded;
   } catch (err) {
     loaded = false;
+    console.error(`[FRPControl] Firewall: LỖI nạp blacklist từ "${V4_BIN}": ${err.message}`);
     return false;
   }
 }
@@ -381,15 +406,18 @@ function subsystemActive() {
 
 /** Nạp dữ liệu sẵn có lúc khởi động + lên lịch build mỗi ngày 00:00. Tải ngay nếu cần mà chưa có data. */
 export function startScheduler() {
-  load();
+  const ok = load();          // CHỈ nạp file cục bộ (tự log kết quả) — KHÔNG tải mạng lúc start.
   loadCustom();
   cleanupCustom();
-  scheduleNextMidnight();
+  scheduleNextMidnight();     // tự tải lại vào 00:00 hàng ngày
   // Dọn custom hết hạn mỗi giờ.
   const t = setInterval(() => cleanupCustom(), 3600 * 1000);
   t.unref?.();
-  if (subsystemActive() && getSettings().firewallAutoUpdate && !loaded) {
-    refresh('khởi tạo lần đầu').catch(() => {});
+
+  const s = getSettings();
+  console.log(`[FRPControl] Firewall: chặn panel ${s.firewallEnabled ? 'BẬT' : 'tắt'} · API ${s.firewallApiEnabled ? 'bật' : 'tắt'} · tự cập nhật ${s.firewallAutoUpdate ? '00:00 hàng ngày' : 'tắt'} · custom ${customList.length} mục.`);
+  if (s.firewallEnabled && !ok) {
+    console.warn('[FRPControl] ⚠ Firewall ĐANG BẬT nhưng chưa có blacklist -> mọi IP được cho qua. Bấm "Cập nhật blacklist ngay" hoặc chờ 00:00.');
   }
 }
 
@@ -413,11 +441,14 @@ function scheduleNextMidnight() {
   dailyTimer.unref?.();
 }
 export function stats() {
+  // ipv4Ranges/ipv6Ranges lấy từ MẢNG THỰC trong RAM (đúng cái lookup dùng) — không phụ thuộc meta.json.
+  const ipv4Ranges = v4.length >>> 1;
+  const ipv6Ranges = v6lo.length;
   return {
-    loaded,
+    loaded: loaded && ipv4Ranges > 0, // có data thực mới coi là loaded (tránh báo nhầm khi file rỗng)
     building,
-    ipv4Ranges: meta?.ipv4Ranges ?? 0,
-    ipv6Ranges: meta?.ipv6Ranges ?? 0,
+    ipv4Ranges,
+    ipv6Ranges,
     ipv4AddressesCovered: meta?.ipv4AddressesCovered ?? '0',
     builtAt: meta?.builtAt ?? null,
     rawEntries: meta?.rawEntries ?? 0,

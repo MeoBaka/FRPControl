@@ -90,6 +90,7 @@ window.API = (() => {
     firewallRefresh: () => request('POST', '/system/firewall/refresh'),
     firewallKeys: () => request('GET', '/system/firewall/keys'),
     firewallCreateKey: (name, canAdd) => request('POST', '/system/firewall/keys', { name, canAdd }),
+    firewallUpdateKey: (id, p) => request('PUT', `/system/firewall/keys/${id}`, p),
     firewallDeleteKey: (id) => request('DELETE', `/system/firewall/keys/${id}`),
     firewallListCustom: () => request('GET', '/system/firewall/custom'),
     firewallAddBlock: (p) => request('POST', '/system/firewall/custom', p),
