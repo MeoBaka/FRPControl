@@ -180,13 +180,36 @@ async function renderProxies(body, node) {
   const chipsHtml = () => { const c = counts(); return `${chip('all', 'All', c)} ${chip('running', 'Running', c)} ${chip('error', 'Error', c)} ${chip('waiting', 'Waiting', c)}`; };
   const typeHtml = () => TYPES.map((t) => `<button data-type="${t}" class="px-3 py-1 rounded-full text-xs transition ${state.type === t ? 'bg-zinc-100 text-zinc-900 font-medium' : 'bg-zinc-800/60 text-zinc-400 hover:text-zinc-200'}">${t}</button>`).join('');
 
-  const HEADERS = ['Tên', 'Loại', 'Trạng thái', 'URL Local', { label: 'URL Remote', align: 'right' }, 'Source', 'Lỗi', { label: 'Thao tác', align: 'right' }];
+  // Bulk action — CHỈ áp dụng cho proxy trong store (config tĩnh không sửa/xóa được).
+  const setStoreEnabled = (name, on) => {
+    const def = storeByName.get(name);
+    if (!def) throw new Error(`"${name}" không có trong store.`);
+    const inner = def[def.type] || {};
+    return API.updateStoreProxy(node.id, name, { ...def, [def.type]: { ...inner, enabled: on } });
+  };
+  const bulk = UI.bulkSelect({
+    onDone: () => App.rerender(),
+    actions: [
+      ...(canUpdate ? [
+        { label: 'Bật', variant: 'primary', run: (names) => UI.bulkRun(names, (n) => setStoreEnabled(n, true), 'Bật proxy') },
+        { label: 'Tắt', run: (names) => UI.bulkRun(names, (n) => setStoreEnabled(n, false), 'Tắt proxy') },
+      ] : []),
+      ...(canDelete ? [{
+        label: 'Xóa', variant: 'danger',
+        confirm: (n) => `Xóa ${n} proxy khỏi store?`,
+        run: (names) => UI.bulkRun(names, (n) => API.deleteStoreProxy(node.id, n), 'Xóa proxy'),
+      }] : []),
+    ],
+  });
+
+  const HEADERS = [bulk.th(), 'Tên', 'Loại', 'Trạng thái', 'URL Local', { label: 'URL Remote', align: 'right' }, 'Source', 'Lỗi', { label: 'Thao tác', align: 'right' }];
   const rowHtml = (p) => {
     const loc = localOf(p); const rem = remoteOf(p);
     const nameCell = p.isStore
       ? `<button data-edit="${F.escapeHtml(p.name)}" class="font-medium text-brand-400 hover:text-brand-300 hover:underline">${F.escapeHtml(p.name)}</button>`
       : `<span class="font-medium">${F.escapeHtml(p.name)}</span>`;
     return `<tr class="border-b border-zinc-800/60 hover:bg-zinc-800/30">
+      ${p.isStore ? bulk.td(p.name) : '<td class="px-3 py-2"></td>'}
       <td class="px-3 py-2">${nameCell}</td>
       <td class="px-3 py-2">${F.typeTag(p.type)}</td>
       <td class="px-3 py-2">${F.statusPill(p.status)}</td>
@@ -217,7 +240,7 @@ async function renderProxies(body, node) {
       <ul class="list-disc list-inside mt-1.5 space-y-0.5"><li><b>TCP/UDP</b>: mở dịch vụ theo cổng.</li><li><b>HTTP/HTTPS</b>: mở web theo tên miền.</li></ul>`,
     action: canCreate ? UI.btn('<i class="fa-solid fa-plus"></i> Thêm proxy đầu tiên', { size: 'sm', variant: 'primary', attrs: 'id="add-proxy-empty"' }) : '',
   }) : '';
-  const draw = () => UI.paginatedTable(body.querySelector('#tbl'), { headers: HEADERS, rows: applyFilter().map(rowHtml), emptyText: 'Không có proxy phù hợp.', emptyHtml });
+  const draw = () => UI.paginatedTable(body.querySelector('#tbl'), { headers: HEADERS, rows: applyFilter().map(rowHtml), emptyText: 'Không có proxy phù hợp.', emptyHtml, onRender: () => bulk.sync() });
 
   const sources = [...new Set(rows0.map((p) => p.source).filter(Boolean))];
   body.innerHTML = `
@@ -233,9 +256,11 @@ async function renderProxies(body, node) {
       </label>
     </div>
     <div id="types" class="flex flex-wrap gap-2 mb-4">${typeHtml()}</div>
+    <div id="bulk-bar" class="hidden"></div>
     <div id="tbl"></div>`;
 
   draw();
+  bulk.attach(body.querySelector('#tbl'), body.querySelector('#bulk-bar'));
   body.querySelector('#q').addEventListener('input', (e) => { state.q = e.target.value.toLowerCase(); draw(); });
   body.querySelector('#f-source').addEventListener('change', (e) => { state.source = e.target.value; draw(); });
   body.querySelector('#types').addEventListener('click', (e) => { const b = e.target.closest('[data-type]'); if (!b) return; state.type = b.dataset.type; body.querySelector('#types').innerHTML = typeHtml(); draw(); });

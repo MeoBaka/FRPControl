@@ -9,7 +9,7 @@ const FW_DEFAULT_PROVIDER = () => ({
 
 Pages['providers/firewall'] = {
   title: 'Provider Firewall',
-  subtitle: 'Firewall native của frps: luật allow/deny + nguồn reputation (hỏi IP lạ)',
+  subtitle: 'Firewall native của frps: chặn theo IP nguồn + port đích, kèm nguồn reputation (hỏi IP lạ)',
   async render(root) {
     const F = Fmt;
     const providers = Store.activeProviders();
@@ -27,14 +27,19 @@ Pages['providers/firewall'] = {
 
     const body = root.querySelector('#fw-body');
     let snap;
+    // Bản MỚI khớp theo IP nguồn + PORT đích, và có thêm `controlPort`.
+    // Bản CŨ khớp theo proxy/user. Nhận diện bằng sự có mặt của field `controlPort` trong response.
+    let isNew = false;
     try {
       const s = await API.providerFirewall(provider.id);
+      isNew = Object.prototype.hasOwnProperty.call(s, 'controlPort');
       snap = {
         enabled: Boolean(s.enabled),
         default: s.default === 'deny' ? 'deny' : 'allow',
         rules: Array.isArray(s.rules) ? s.rules : [],
         provider: { ...FW_DEFAULT_PROVIDER(), ...(s.provider || {}) },
       };
+      if (isNew) snap.controlPort = Boolean(s.controlPort);
       if (!snap.provider.headers) snap.provider.headers = {};
     } catch (err) {
       const hint = /404/.test(err.message) ? 'frps này có thể là bản chuẩn/cũ (không có firewall API). Cần fork Meobaka.' : err.message;
@@ -85,13 +90,19 @@ Pages['providers/firewall'] = {
       const d = Math.round((exp - Date.now() / 1000) / 86400);
       return d <= 0 ? '<span class="text-zinc-600">hết hạn</span>' : `<span class="text-amber-400">${d}d</span>`;
     };
+    // Cột giữa: bản mới = Port (IP nguồn + port đích); bản cũ = Proxy + User.
+    const matchCols = isNew ? 1 : 2;
+    const rulesHeadHtml = () => (isNew
+      ? '<th class="px-3 py-1.5 text-left">Port</th>'
+      : '<th class="px-3 py-1.5 text-left">Proxy</th><th class="px-3 py-1.5 text-left">User</th>');
     const rulesBodyHtml = () => {
-      if (!snap.rules.length) return '<tr><td colspan="7" class="px-3 py-6 text-center text-zinc-500 text-sm">Chưa có luật — chỉ áp provider + default policy.</td></tr>';
+      if (!snap.rules.length) return `<tr><td colspan="${5 + matchCols}" class="px-3 py-6 text-center text-zinc-500 text-sm">Chưa có luật — chỉ áp provider + default policy.</td></tr>`;
       return snap.rules.map((r, i) => `<tr class="border-b border-zinc-800/60">
         <td class="px-3 py-2"><span class="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${r.action === 'allow' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}">${esc(r.action)}</span></td>
         <td class="px-3 py-2 font-mono text-xs">${esc(r.cidr || 'any')}</td>
-        <td class="px-3 py-2 text-xs">${esc(r.proxy || 'any')}</td>
-        <td class="px-3 py-2 text-xs">${esc(r.user || 'any')}</td>
+        ${isNew
+          ? `<td class="px-3 py-2 font-mono text-xs">${esc(r.port || 'all')}</td>`
+          : `<td class="px-3 py-2 text-xs">${esc(r.proxy || 'any')}</td><td class="px-3 py-2 text-xs">${esc(r.user || 'any')}</td>`}
         <td class="px-3 py-2 text-xs">${expiryText(r.expiresAt)}</td>
         <td class="px-3 py-2 text-xs text-zinc-400">${esc(r.note || '')}</td>
         <td class="px-3 py-2 text-right whitespace-nowrap">
@@ -107,6 +118,17 @@ Pages['providers/firewall'] = {
         <label class="flex items-center gap-2 text-sm text-zinc-300"><span>Bật firewall</span>
           <input type="checkbox" id="fw-enabled" ${snap.enabled ? 'checked' : ''} ${canUpdate ? '' : 'disabled'} class="rounded bg-zinc-800 border-zinc-700"/></label>
       </div>
+
+      ${isNew ? UI.card('Phạm vi áp dụng (Scope)', `<div class="p-4 space-y-3">
+        <p class="text-[11px] text-zinc-400 leading-relaxed">Luật khớp theo <b>IP nguồn</b> + <b>port đích trên frps</b> (tcp, udp, http, https, mc, pe, tcpmux, tcp+udp). Mỗi port tại một thời điểm thuộc về một proxy → luật vẫn đúng khi proxy đăng ký lại với tên khác. Lưu ý: http/https dùng chung port vhost, mc có thể dùng chung port → luật ở đó áp cho tất cả. <b>stcp/xtcp</b> (và biến thể udp) xác thực bằng visitor nên <b>không</b> thuộc phạm vi này.</p>
+        <label class="flex items-start gap-2 text-sm text-zinc-300">
+          <input type="checkbox" id="fw-controlport" ${snap.controlPort ? 'checked' : ''} ${canUpdate ? '' : 'disabled'} class="mt-0.5 rounded bg-zinc-800 border-zinc-700"/>
+          <span>Bảo vệ cả <b>control port</b> của frps
+            <span class="block text-[11px] text-zinc-500 mt-0.5">Áp luật cho frpc kết nối tới <b>bindPort</b> (trước khi login) — ghi port đó vào một luật để chặn client đăng nhập.</span>
+          </span>
+        </label>
+        <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 p-2.5 text-[11px] text-amber-200">Cẩn thận: nếu <b>default policy = deny</b>, bật cái này sẽ <b>khóa mọi client</b> không có luật allow tường minh.</div>
+      </div>`) : ''}
 
       ${UI.card('Blacklist provider (hỏi IP lạ)', `<div class="p-4 space-y-3">
         <label class="block max-w-xs"><span class="text-xs text-zinc-400">Chế độ</span>
@@ -130,7 +152,7 @@ Pages['providers/firewall'] = {
         </div>
         <div class="overflow-x-auto"><table class="w-full text-sm">
           <thead class="text-xs text-zinc-500"><tr>
-            <th class="px-3 py-1.5 text-left">Action</th><th class="px-3 py-1.5 text-left">CIDR/IP</th><th class="px-3 py-1.5 text-left">Proxy</th><th class="px-3 py-1.5 text-left">User</th><th class="px-3 py-1.5 text-left">Hết hạn</th><th class="px-3 py-1.5 text-left">Ghi chú</th><th></th>
+            <th class="px-3 py-1.5 text-left">Action</th><th class="px-3 py-1.5 text-left">CIDR/IP</th>${rulesHeadHtml()}<th class="px-3 py-1.5 text-left">Hết hạn</th><th class="px-3 py-1.5 text-left">Ghi chú</th><th></th>
           </tr></thead>
           <tbody id="fw-rules-body">${rulesBodyHtml()}</tbody>
         </table></div>
@@ -157,6 +179,7 @@ Pages['providers/firewall'] = {
     wireProviderInputs();
 
     body.querySelector('#fw-enabled')?.addEventListener('change', (e) => { snap.enabled = e.target.checked; });
+    body.querySelector('#fw-controlport')?.addEventListener('change', (e) => { snap.controlPort = e.target.checked; });
     body.querySelector('#fw-default')?.addEventListener('change', (e) => { snap.default = e.target.value; });
     body.querySelector('#fw-pmode')?.addEventListener('change', (e) => { snap.provider.mode = e.target.value; drawProvider(); });
     body.querySelector('#fw-add-rule')?.addEventListener('click', () => openRuleModal(-1));
@@ -171,7 +194,9 @@ Pages['providers/firewall'] = {
     body.querySelector('#fw-save')?.addEventListener('click', async (e) => {
       const btn = e.target.closest('button'); btn.disabled = true;
       try {
-        await API.putProviderFirewall(provider.id, { enabled: snap.enabled, default: snap.default, rules: snap.rules, provider: snap.provider });
+        const payload = { enabled: snap.enabled, default: snap.default, rules: snap.rules, provider: snap.provider };
+        if (isNew) payload.controlPort = Boolean(snap.controlPort); // chỉ gửi khi frps hỗ trợ
+        await API.putProviderFirewall(provider.id, payload);
         UI.toast('Đã lưu cấu hình firewall frps.', 'success');
       } catch (err) { UI.toast('Lưu lỗi: ' + err.message, 'error'); }
       btn.disabled = false;
@@ -179,9 +204,18 @@ Pages['providers/firewall'] = {
 
     // ---- Modal thêm/sửa luật ----
     function openRuleModal(index) {
-      const r = index === -1 ? { action: 'deny', cidr: '', proxy: '', user: '', note: '', expiresAt: 0 } : { ...snap.rules[index] };
+      const blank = isNew
+        ? { action: 'deny', cidr: '', port: '', note: '', expiresAt: 0 }
+        : { action: 'deny', cidr: '', proxy: '', user: '', note: '', expiresAt: 0 };
+      const r = index === -1 ? blank : { ...snap.rules[index] };
       const curDays = r.expiresAt ? Math.max(1, Math.round((r.expiresAt - Date.now() / 1000) / 86400)) : 14;
       const dur = !r.expiresAt ? 'perm' : '14';
+      // Bản mới khớp theo PORT đích; bản cũ khớp theo proxy/user.
+      const matchFields = isNew
+        ? `<label class="block"><span class="text-xs text-zinc-400">Port (trống = all)</span>${inp(r.port, 'name="port"', 'all')}
+             <span class="block text-[11px] text-zinc-500 mt-1">Port trên frps mà client kết nối tới: một port (<code>6000</code>), dải (<code>6000-6010</code>), danh sách (<code>80,443,7000-7010</code>) hoặc <code>all</code>.</span></label>`
+        : `<label class="block"><span class="text-xs text-zinc-400">Proxy (glob, trống = mọi)</span>${inp(r.proxy, 'name="proxy"', 'rdp-*')}</label>
+           <label class="block"><span class="text-xs text-zinc-400">User (glob, trống = mọi)</span>${inp(r.user, 'name="user"', '')}</label>`;
       UI.openModal({
         title: index === -1 ? 'Thêm luật' : 'Sửa luật',
         body: `<form id="rule-form" class="space-y-3">
@@ -191,8 +225,7 @@ Pages['providers/firewall'] = {
               <option value="allow" ${r.action === 'allow' ? 'selected' : ''}>allow</option>
             </select></label>
           <label class="block"><span class="text-xs text-zinc-400">CIDR / IP (trống = mọi IP)</span>${inp(r.cidr, 'name="cidr"', '1.2.3.0/24, ::1, 1.2.3.4')}</label>
-          <label class="block"><span class="text-xs text-zinc-400">Proxy (glob, trống = mọi)</span>${inp(r.proxy, 'name="proxy"', 'rdp-*')}</label>
-          <label class="block"><span class="text-xs text-zinc-400">User (glob, trống = mọi)</span>${inp(r.user, 'name="user"', '')}</label>
+          ${matchFields}
           <div class="grid grid-cols-2 gap-3">
             <label class="block"><span class="text-xs text-zinc-400">Thời hạn</span>
               <select name="dur" class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
@@ -207,7 +240,9 @@ Pages['providers/firewall'] = {
         onMount(el) {
           el.querySelector('#rule-ok').addEventListener('click', () => {
             const f = el.querySelector('#rule-form').elements;
-            const rule = { ...r, action: f.action.value, cidr: f.cidr.value.trim(), proxy: f.proxy.value.trim(), user: f.user.value.trim(), note: f.note.value.trim() };
+            const rule = { ...r, action: f.action.value, cidr: f.cidr.value.trim(), note: f.note.value.trim() };
+            if (isNew) rule.port = f.port.value.trim();
+            else { rule.proxy = f.proxy.value.trim(); rule.user = f.user.value.trim(); }
             rule.expiresAt = f.dur.value === 'perm' ? 0 : Math.floor(Date.now() / 1000) + (Number(f.days.value) || 1) * 86400;
             if (index === -1) snap.rules.push(rule); else snap.rules[index] = rule;
             UI.closeModal(); drawRules();

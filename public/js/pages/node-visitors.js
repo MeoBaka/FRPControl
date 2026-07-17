@@ -46,7 +46,30 @@ Pages['nodes/visitors'] = {
       return;
     }
 
-    const HEADERS = ['Tên', 'Loại', 'Tóm tắt', { label: 'Thao tác', align: 'right' }];
+    // Bulk action: bật/tắt/xóa nhiều visitor trong store.
+    const byName = new Map((store.visitors || []).map((d) => [d.name, d]));
+    const setVisitorEnabled = (name, on) => {
+      const def = byName.get(name);
+      if (!def) throw new Error(`"${name}" không có trong store.`);
+      const inner = def[def.type] || {};
+      return API.updateStoreVisitor(node.id, name, { ...def, [def.type]: { ...inner, enabled: on } });
+    };
+    const bulk = UI.bulkSelect({
+      onDone: () => App.rerender(),
+      actions: [
+        ...(canUpdate ? [
+          { label: 'Bật', variant: 'primary', run: (names) => UI.bulkRun(names, (n) => setVisitorEnabled(n, true), 'Bật visitor') },
+          { label: 'Tắt', run: (names) => UI.bulkRun(names, (n) => setVisitorEnabled(n, false), 'Tắt visitor') },
+        ] : []),
+        ...(canDelete ? [{
+          label: 'Xóa', variant: 'danger',
+          confirm: (n) => `Xóa ${n} visitor khỏi store?`,
+          run: (names) => UI.bulkRun(names, (n) => API.deleteStoreVisitor(node.id, n), 'Xóa visitor'),
+        }] : []),
+      ],
+    });
+
+    const HEADERS = [bulk.th(), 'Tên', 'Loại', 'Tóm tắt', { label: 'Thao tác', align: 'right' }];
     const rowHtml = (def) => {
       const cfg = def[def.type] || {};
       const summary = [
@@ -54,6 +77,7 @@ Pages['nodes/visitors'] = {
         (cfg.bindAddr || cfg.bindPort != null) ? `bind ${cfg.bindAddr || '127.0.0.1'}:${cfg.bindPort ?? '?'}` : '',
       ].filter(Boolean).join(' · ');
       return `<tr class="border-b border-zinc-800/60 hover:bg-zinc-800/30">
+        ${bulk.td(def.name)}
         <td class="px-3 py-2 font-medium">${F.escapeHtml(def.name)}</td>
         <td class="px-3 py-2">${F.typeTag(def.type)}</td>
         <td class="px-3 py-2 text-xs text-zinc-400">${F.escapeHtml(summary || '—')}</td>
@@ -63,7 +87,7 @@ Pages['nodes/visitors'] = {
         </td></tr>`;
     };
 
-    root.innerHTML = `<div id="visitors-view" class="p-6">${bar}<div id="tbl"></div></div>`;
+    root.innerHTML = `<div id="visitors-view" class="p-6">${bar}<div id="bulk-bar" class="hidden"></div><div id="tbl"></div></div>`;
     UI.wireSelector(root);
     const visitorEmpty = UI.emptyNote({
       icon: 'fa-user-shield',
@@ -76,7 +100,8 @@ Pages['nodes/visitors'] = {
         </ul>`,
       action: canCreate ? UI.btn('<i class="fa-solid fa-plus"></i> Thêm visitor đầu tiên', { size: 'sm', variant: 'primary', attrs: 'id="add-visitor-empty"' }) : '',
     });
-    UI.paginatedTable(root.querySelector('#tbl'), { headers: HEADERS, rows: (store.visitors || []).map(rowHtml), emptyText: 'Chưa có visitor nào trong store.', emptyHtml: visitorEmpty });
+    UI.paginatedTable(root.querySelector('#tbl'), { headers: HEADERS, rows: (store.visitors || []).map(rowHtml), emptyText: 'Chưa có visitor nào trong store.', emptyHtml: visitorEmpty, onRender: () => bulk.sync() });
+    bulk.attach(root.querySelector('#tbl'), root.querySelector('#bulk-bar'));
 
     const view = root.querySelector('#visitors-view');
     const variant = node.frpVariant || 'extended';

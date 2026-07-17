@@ -108,16 +108,23 @@ export function clearOfflineProxies(instance) {
  * proxy -> query v1 /api/proxy/{type} CHỈ những type đó (đúng đủ mọi type + ít request, không
  * burst 14). frps cũ (system/info 404) -> fallback query toàn bộ PROXY_TYPES qua v1.
  */
-export function getAllProxies(instance) {
+/**
+ * @param {object} [knownCounts] proxyTypeCount đã có sẵn (từ serverInfo) -> BỎ QUA việc gọi lại
+ *   system/info (tránh request trùng). Truyền undefined nếu chưa có.
+ */
+export function getAllProxies(instance, knownCounts) {
+  if (knownCounts && typeof knownCounts === 'object') return collectProxiesByCounts(instance, knownCounts);
   return v2OrV1(() => getAllProxiesSmart(instance), () => collectProxiesByTypes(instance, PROXY_TYPES));
+}
+
+function collectProxiesByCounts(instance, counts) {
+  const types = Object.keys(counts).filter((t) => counts[t] > 0);
+  return types.length ? collectProxiesByTypes(instance, types) : Promise.resolve([]);
 }
 
 async function getAllProxiesSmart(instance) {
   const info = await callV2(instance, '/api/v2/system/info'); // 404 -> v2OrV1 fallback query toàn bộ v1
-  const counts = (info && info.status && info.status.proxyTypeCount) || {};
-  const types = Object.keys(counts).filter((t) => counts[t] > 0);
-  if (!types.length) return [];
-  return collectProxiesByTypes(instance, types);
+  return collectProxiesByCounts(instance, (info && info.status && info.status.proxyTypeCount) || {});
 }
 
 /** Query v1 /api/proxy/{type} cho danh sách type, gộp + chuẩn hóa thành mảng phẳng. */
@@ -151,10 +158,11 @@ async function collectProxiesByTypes(instance, types) {
  * Tổng hợp overview cho một frps: serverinfo + danh sách proxy.
  */
 export async function getOverview(instance) {
-  const [serverInfo, proxies] = await Promise.all([
-    getServerInfo(instance),
-    getAllProxies(instance),
-  ]);
+  // serverInfo (v1 lẫn v2) đã có sẵn proxyTypeCount -> lấy 1 lần rồi dùng luôn cho getAllProxies.
+  // Không chạy song song vì getAllProxies vốn PHẢI đợi biết type nào có proxy -> độ trễ y hệt,
+  // nhưng tiết kiệm 1 request system/info mỗi lần overview.
+  const serverInfo = await getServerInfo(instance);
+  const proxies = await getAllProxies(instance, serverInfo?.proxyTypeCount);
 
   const online = proxies.filter((p) => p.status === 'online').length;
   return {

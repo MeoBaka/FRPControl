@@ -146,7 +146,7 @@ window.UI = (() => {
   // paginatedTable(mount, { headers, rows: string[] (<tr>), pageSize, emptyText })
   // Chỉ tbody được render lại khi đổi trang -> đăng ký sự kiện hàng bằng delegation trên `mount`.
   const PAGE_SIZES = [10, 20, 50, 100, 200];
-  function paginatedTable(mount, { headers, rows, pageSize, emptyText = 'Không có dữ liệu.', emptyHtml = '' }) {
+  function paginatedTable(mount, { headers, rows, pageSize, emptyText = 'Không có dữ liệu.', emptyHtml = '', onRender }) {
     // Trống + có note giải thích -> hiện hẳn note thay cho bảng rỗng.
     if (!rows.length && emptyHtml) { mount.innerHTML = emptyHtml; return; }
     // Ghi nhớ số dòng/trang trong localStorage để không mất khi F5 hoặc khi lọc lại.
@@ -198,6 +198,7 @@ window.UI = (() => {
       mount.querySelector('[data-pt-page]').textContent = `Trang ${st.page}/${pages}`;
       prevBtn.disabled = st.page <= 1;
       nextBtn.disabled = st.page >= pages;
+      if (onRender) onRender(bodyEl); // hook: khôi phục checkbox bulk sau khi đổi trang
     }
 
     mount.querySelector('[data-pt-size]').addEventListener('change', (e) => {
@@ -208,6 +209,84 @@ window.UI = (() => {
     prevBtn.addEventListener('click', () => { if (st.page > 1) { st.page--; render(); } });
     nextBtn.addEventListener('click', () => { st.page++; render(); });
     render();
+  }
+
+  // ---------------- Bulk action (chọn nhiều dòng) ----------------
+  /** Chạy fn cho từng id (song song), toast tổng kết thành/bại. */
+  async function bulkRun(ids, fn, label = 'Xử lý') {
+    const res = await Promise.allSettled(ids.map((id) => fn(id)));
+    const ok = res.filter((r) => r.status === 'fulfilled').length;
+    const fail = res.length - ok;
+    toast(fail ? `${label}: ${ok} thành công, ${fail} lỗi.` : `${label}: ${ok} mục.`, fail ? 'error' : 'success');
+  }
+
+  /**
+   * Bulk select cho bảng phân trang. Lựa chọn theo id, GIỮ nguyên khi đổi trang.
+   *   const bulk = UI.bulkSelect({ actions: [{label, variant, confirm(n), run(ids)}], onDone });
+   *   headers: [bulk.th(), ...]        row: `<tr>${bulk.td(id)}...</tr>`
+   *   UI.paginatedTable(tbl, { ..., onRender: () => bulk.sync() });
+   *   bulk.attach(tbl, barEl);
+   */
+  function bulkSelect({ actions = [], onDone } = {}) {
+    const sel = new Set();
+    let tableEl = null;
+    let barEl = null;
+    const CB = 'rounded bg-zinc-800 border-zinc-700 cursor-pointer';
+
+    const th = () => ({ label: `<input type="checkbox" data-bulk-all class="${CB}" title="Chọn tất cả trang này" />` });
+    const td = (id) => `<td class="px-3 py-2"><input type="checkbox" data-bulk="${escapeHtml(String(id))}" class="${CB}" /></td>`;
+    const pageIds = () => [...tableEl.querySelectorAll('[data-bulk]')].map((c) => c.dataset.bulk);
+
+    function renderBar() {
+      if (!barEl) return;
+      if (!sel.size) { barEl.innerHTML = ''; barEl.classList.add('hidden'); return; }
+      barEl.classList.remove('hidden');
+      barEl.innerHTML = `<div class="flex flex-wrap items-center gap-2 rounded-lg border border-brand-500/40 bg-brand-600/10 px-3 py-2 mb-3">
+        <span class="text-sm text-brand-200">Đã chọn <b>${sel.size}</b></span>
+        <div class="flex-1"></div>
+        ${actions.map((a, i) => btn(a.label, { size: 'sm', variant: a.variant, attrs: `data-bulk-act="${i}"` })).join(' ')}
+        ${btn('Bỏ chọn', { size: 'sm', attrs: 'data-bulk-clear' })}
+      </div>`;
+    }
+    function sync() {
+      if (!tableEl) return;
+      tableEl.querySelectorAll('[data-bulk]').forEach((c) => { c.checked = sel.has(c.dataset.bulk); });
+      const all = tableEl.querySelector('[data-bulk-all]');
+      if (all) {
+        const ids = pageIds();
+        const every = ids.length > 0 && ids.every((i) => sel.has(i));
+        all.checked = every;
+        all.indeterminate = !every && ids.some((i) => sel.has(i));
+      }
+      renderBar();
+    }
+    function attach(table, bar) {
+      tableEl = table; barEl = bar;
+      table.addEventListener('change', (e) => {
+        const all = e.target.closest('[data-bulk-all]');
+        if (all) {
+          const ids = pageIds();
+          ids.forEach((i) => (all.checked ? sel.add(i) : sel.delete(i)));
+          sync(); return;
+        }
+        const cb = e.target.closest('[data-bulk]');
+        if (cb) { if (cb.checked) sel.add(cb.dataset.bulk); else sel.delete(cb.dataset.bulk); sync(); }
+      });
+      bar.addEventListener('click', async (e) => {
+        if (e.target.closest('[data-bulk-clear]')) { sel.clear(); sync(); return; }
+        const el = e.target.closest('[data-bulk-act]');
+        if (!el) return;
+        const act = actions[Number(el.dataset.bulkAct)];
+        const ids = [...sel];
+        if (!ids.length) return;
+        if (act.confirm && !confirm(act.confirm(ids.length))) return;
+        bar.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+        try { await act.run(ids); sel.clear(); if (onDone) onDone(); }
+        catch (err) { toast('Lỗi: ' + err.message, 'error'); sync(); }
+      });
+      sync();
+    }
+    return { sel, th, td, attach, sync };
   }
 
   // ---------------- Form thêm/sửa instance (provider/node) ----------------
@@ -465,7 +544,7 @@ window.UI = (() => {
   return {
     toast, openModal, closeModal,
     spinner, emptyState, emptyNote, errorBox, needSelection,
-    statCard, card, btn, table, paginatedTable,
+    statCard, card, btn, table, paginatedTable, bulkSelect, bulkRun,
     selector, selectorBar, wireSelector,
     openInstanceModal, deleteInstance, instanceSwitch, toggleInstanceEnabled,
     help, HELP,

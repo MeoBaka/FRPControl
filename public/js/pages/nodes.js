@@ -27,7 +27,22 @@ Pages['nodes'] = {
     }
 
     const F = Fmt;
-    const HEADERS = ['', { label: 'Bật', align: 'center' }, 'Tên', 'Nhóm', 'URL', 'Trạng thái', 'Proxy chạy', 'Lỗi', { label: 'Thao tác', align: 'right' }];
+    // Bulk action: bật/tắt/xóa nhiều node cùng lúc.
+    const bulk = UI.bulkSelect({
+      onDone: () => App.rerender(),
+      actions: [
+        ...(canUpdate ? [
+          { label: 'Bật', variant: 'primary', run: (ids) => UI.bulkRun(ids, (id) => API.updateInstance(id, { enabled: true }), 'Bật node').then(() => Store.loadInstances()) },
+          { label: 'Tắt', run: (ids) => UI.bulkRun(ids, (id) => API.updateInstance(id, { enabled: false }), 'Tắt node').then(() => Store.loadInstances()) },
+        ] : []),
+        ...(canDelete ? [{
+          label: 'Xóa', variant: 'danger',
+          confirm: (n) => `Xóa ${n} node khỏi FRPControl? (Không ảnh hưởng frpc thực tế)`,
+          run: (ids) => UI.bulkRun(ids, (id) => API.deleteInstance(id), 'Xóa node').then(() => Store.loadInstances()),
+        }] : []),
+      ],
+    });
+    const HEADERS = [bulk.th(), '', { label: 'Bật', align: 'center' }, 'Tên', 'Nhóm', 'URL', 'Trạng thái', 'Proxy chạy', 'Lỗi', { label: 'Thao tác', align: 'right' }];
 
     const rowInner = (n, ov) => {
       const disabled = n.enabled === false;
@@ -56,6 +71,7 @@ Pages['nodes'] = {
         ? (s.problemProxies ? `<span class="text-red-400">${s.problemProxies}</span>` : '<span class="text-zinc-500">0</span>')
         : `<span class="inline-flex items-center gap-1 text-red-400 cursor-help" title="${F.escapeHtml((ov && ov.error) || 'Không kết nối được')}"><i class="fa-solid fa-circle-exclamation"></i><span class="text-xs">Lỗi</span></span>`));
       return `
+        ${bulk.td(n.id)}
         <td class="px-3 py-2">${dot}</td>
         <td class="px-3 py-2 text-center">${switchCell}</td>
         <td class="px-3 py-2 font-medium ${disabled ? 'text-zinc-500' : ''}">${F.escapeHtml(n.name)}</td>
@@ -71,18 +87,20 @@ Pages['nodes'] = {
     };
 
     const results = {};
-    root.innerHTML = `<div class="p-6"><div id="tbl"></div></div>`;
+    root.innerHTML = `<div class="p-6"><div id="bulk-bar" class="hidden"></div><div id="tbl"></div></div>`;
     const draw = () => UI.paginatedTable(root.querySelector('#tbl'), {
       headers: HEADERS,
       rows: nodes.map((n) => `<tr data-ovid="${n.id}" class="border-b border-zinc-800/60 hover:bg-zinc-800/30">${rowInner(n, results[n.id])}</tr>`),
+      onRender: () => bulk.sync(), // giữ lựa chọn khi đổi trang
     });
     draw();
+    bulk.attach(root.querySelector('#tbl'), root.querySelector('#bulk-bar'));
     nodes.forEach((n) => {
       if (n.enabled === false) return; // node đã tắt: không gọi API
       const apply = (ov) => {
         results[n.id] = ov;
         const tr = root.querySelector(`[data-ovid="${n.id}"]`);
-        if (tr) tr.innerHTML = rowInner(n, ov); else draw();
+        if (tr) { tr.innerHTML = rowInner(n, ov); bulk.sync(); } else draw();
       };
       API.overview(n.id).then(apply).catch((err) => apply({ reachable: false, error: err.message }));
     });

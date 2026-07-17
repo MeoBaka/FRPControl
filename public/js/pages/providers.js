@@ -27,7 +27,22 @@ Pages['providers'] = {
     }
 
     const F = Fmt;
-    const HEADERS = ['', { label: 'Bật', align: 'center' }, 'Tên', 'Nhóm', 'URL', 'Trạng thái', 'Phiên bản', 'Proxy', 'Network', { label: 'Thao tác', align: 'right' }];
+    // Bulk action: bật/tắt/xóa nhiều provider cùng lúc.
+    const bulk = UI.bulkSelect({
+      onDone: () => App.rerender(),
+      actions: [
+        ...(canUpdate ? [
+          { label: 'Bật', variant: 'primary', run: (ids) => UI.bulkRun(ids, (id) => API.updateInstance(id, { enabled: true }), 'Bật provider').then(() => Store.loadInstances()) },
+          { label: 'Tắt', run: (ids) => UI.bulkRun(ids, (id) => API.updateInstance(id, { enabled: false }), 'Tắt provider').then(() => Store.loadInstances()) },
+        ] : []),
+        ...(canDelete ? [{
+          label: 'Xóa', variant: 'danger',
+          confirm: (n) => `Xóa ${n} provider khỏi FRPControl? (Không ảnh hưởng frps thực tế)`,
+          run: (ids) => UI.bulkRun(ids, (id) => API.deleteInstance(id), 'Xóa provider').then(() => Store.loadInstances()),
+        }] : []),
+      ],
+    });
+    const HEADERS = [bulk.th(), '', { label: 'Bật', align: 'center' }, 'Tên', 'Nhóm', 'URL', 'Trạng thái', 'Phiên bản', 'Proxy', 'Network', { label: 'Thao tác', align: 'right' }];
 
     // Nội dung 1 dòng theo trạng thái overview: undefined = đang tải, {reachable,...} = đã xong.
     const rowInner = (p, ov) => {
@@ -58,6 +73,7 @@ Pages['providers'] = {
         ? `<span class="text-xs"><i class="fa-solid fa-arrow-down text-emerald-400"></i> ${F.formatBytes(s.totalTrafficIn)} &nbsp;<i class="fa-solid fa-arrow-up text-sky-400"></i> ${F.formatBytes(s.totalTrafficOut)}</span>`
         : `<span class="inline-flex items-center gap-1 text-red-400 cursor-help" title="${F.escapeHtml((ov && ov.error) || 'Không kết nối được')}"><i class="fa-solid fa-circle-exclamation"></i><span class="text-xs">Lỗi</span></span>`));
       return `
+        ${bulk.td(p.id)}
         <td class="px-3 py-2">${dot}</td>
         <td class="px-3 py-2 text-center">${switchCell}</td>
         <td class="px-3 py-2 font-medium ${disabled ? 'text-zinc-500' : ''}">${F.escapeHtml(p.name)}</td>
@@ -75,19 +91,21 @@ Pages['providers'] = {
 
     // Hiện bảng ngay (tất cả "đang kết nối"), rồi cập nhật TỪNG dòng khi overview của nó xong.
     const results = {};
-    root.innerHTML = `<div class="p-6"><div id="tbl"></div></div>`;
+    root.innerHTML = `<div class="p-6"><div id="bulk-bar" class="hidden"></div><div id="tbl"></div></div>`;
     const draw = () => UI.paginatedTable(root.querySelector('#tbl'), {
       headers: HEADERS,
       rows: providers.map((p) => `<tr data-ovid="${p.id}" class="border-b border-zinc-800/60 hover:bg-zinc-800/30">${rowInner(p, results[p.id])}</tr>`),
+      onRender: () => bulk.sync(), // giữ lựa chọn khi đổi trang
     });
     draw();
+    bulk.attach(root.querySelector('#tbl'), root.querySelector('#bulk-bar'));
     // Cập nhật in-place khi dòng đang hiển thị, fallback vẽ lại (đổi trang) đều đúng nhờ results[].
     providers.forEach((p) => {
       if (p.enabled === false) return; // provider đã tắt: không gọi API
       const apply = (ov) => {
         results[p.id] = ov;
         const tr = root.querySelector(`[data-ovid="${p.id}"]`);
-        if (tr) tr.innerHTML = rowInner(p, ov); else draw();
+        if (tr) { tr.innerHTML = rowInner(p, ov); bulk.sync(); } else draw();
       };
       API.overview(p.id).then(apply).catch((err) => apply({ reachable: false, error: err.message }));
     });
