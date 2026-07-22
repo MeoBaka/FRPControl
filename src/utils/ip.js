@@ -84,16 +84,29 @@ export function hexToBig(hex) {
 }
 
 /**
- * Parse 1 DÒNG blocklist -> DẢI địa chỉ (interval, bao gồm 2 đầu).
+ * Parse 1 DÒNG blocklist -> DẢI địa chỉ (interval, bao gồm 2 đầu) + NHÃN (lý do).
  * Chấp nhận: IP đơn ("1.2.3.4", "2a14::1") HOẶC CIDR ("1.19.0.0/16", "2a03::/32").
+ *
+ * Phần sau địa chỉ là NHÃN/lý do, có hoặc không có ký tự comment:
+ *   "2.56.189.17 # nordvpn"   -> label "nordvpn"
+ *   "45.8.146.0/24 botnet c2" -> label "botnet c2"
+ *   "10.0.0.1#x"              -> label "x"
+ *   "1.2.3.4"                 -> label ""
+ * Dòng bắt đầu bằng '#' hoặc ';' là comment thuần -> null.
+ *
  * Trả:
- *   { v: 4, lo, hi }            (lo/hi là uint32)
- *   { v: 6, lo, hi }            (lo/hi là BigInt u128)
+ *   { v: 4, lo, hi, label }     (lo/hi là uint32)
+ *   { v: 6, lo, hi, label }     (lo/hi là BigInt u128)
  *   null nếu không hợp lệ.
  */
 export function parseEntry(line) {
-  const s = String(line).trim();
-  if (!s || s.startsWith('#')) return null;
+  const raw = String(line).trim();
+  if (!raw || raw.startsWith('#') || raw.startsWith(';')) return null;
+  // Token đầu = IP/CIDR (dừng ở khoảng trắng hoặc '#'/';'), phần còn lại = nhãn.
+  const m = /^([^\s#;]+)\s*[#;]?\s*(.*)$/.exec(raw);
+  if (!m) return null;
+  const s = m[1];
+  const label = m[2].trim();
   const slash = s.indexOf('/');
   const addr = slash === -1 ? s : s.slice(0, slash);
   const prefix = slash === -1 ? null : s.slice(slash + 1);
@@ -102,27 +115,27 @@ export function parseEntry(line) {
     const hex = ipv6ToHex(addr);
     if (!hex) return null;
     const base = hexToBig(hex);
-    if (prefix === null) return { v: 6, lo: base, hi: base };
+    if (prefix === null) return { v: 6, lo: base, hi: base, label };
     if (!/^\d{1,3}$/.test(prefix)) return null;
     const p = Number(prefix);
     if (p > 128) return null;
     const hostBits = 128n - BigInt(p);
     const lo = hostBits === 128n ? 0n : (base >> hostBits) << hostBits;
     const hi = lo | ((1n << hostBits) - 1n);
-    return { v: 6, lo, hi };
+    return { v: 6, lo, hi, label };
   }
 
   const n = ipv4ToInt(addr);
   if (n === null) return null;
-  if (prefix === null) return { v: 4, lo: n, hi: n };
+  if (prefix === null) return { v: 4, lo: n, hi: n, label };
   if (!/^\d{1,2}$/.test(prefix)) return null;
   const p = Number(prefix);
   if (p > 32) return null;
-  if (p === 0) return { v: 4, lo: 0, hi: 0xffffffff };
+  if (p === 0) return { v: 4, lo: 0, hi: 0xffffffff, label };
   const mask = (0xffffffff << (32 - p)) >>> 0; // p in 1..32
   const lo = (n & mask) >>> 0;
   const hi = (lo | (~mask >>> 0)) >>> 0;
-  return { v: 4, lo, hi };
+  return { v: 4, lo, hi, label };
 }
 
 /**

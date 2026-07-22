@@ -61,8 +61,20 @@ window.Store = (() => {
   const activeNodes = () => nodes().filter((n) => n.enabled !== false);
 
   const getInstance = (id) => state.instances.find((i) => i.id === id) || null;
-  const selectedProvider = () => getInstance(state.selectedProviderId);
-  const selectedNode = () => getInstance(state.selectedNodeId);
+
+  // Lựa chọn có thể trỏ tới instance vừa bị TẮT hoặc đã xóa (vd tắt node ngay ở trang Nodes,
+  // hoặc id cũ còn trong localStorage) — loadInstances() chỉ nắn lại lúc tải. Các trang vận hành
+  // chỉ liệt kê instance đang bật, nên tự nắn về cái đang bật đầu tiên: trả về một instance đã
+  // tắt sẽ khiến trang gọi API lỗi trong khi selector không hề hiện nó.
+  function pickActive(list, id, set) {
+    const cur = list.find((i) => i.id === id);
+    if (cur) return cur;
+    const next = list[0] || null;
+    set(next ? next.id : null);
+    return next;
+  }
+  const selectedProvider = () => pickActive(activeProviders(), state.selectedProviderId, setProvider);
+  const selectedNode = () => pickActive(activeNodes(), state.selectedNodeId, setNode);
 
   function setProvider(id) {
     state.selectedProviderId = id;

@@ -4,6 +4,7 @@ window.Pages = window.Pages || {};
 const FW_DEFAULT_PROVIDER = () => ({
   mode: 'off', frpControlURL: '', frpControlAPIKey: '',
   url: '', method: 'GET', body: '', headers: {}, blockedPath: 'results.0.blacklisted',
+  reasonPath: 'results.0.reason',
   cacheTTLSec: 300, timeoutMs: 800, failOpen: false, insecureTLS: false,
 });
 
@@ -27,12 +28,17 @@ Pages['providers/firewall'] = {
 
     const body = root.querySelector('#fw-body');
     let snap;
-    // Bản MỚI khớp theo IP nguồn + PORT đích, và có thêm `controlPort`.
-    // Bản CŨ khớp theo proxy/user. Nhận diện bằng sự có mặt của field `controlPort` trong response.
+    // Ba thế hệ frps, nhận diện ĐỘC LẬP từng field có trong GET /api/firewall:
+    //   cũ            -> rule khớp proxy+user, không có controlPort
+    //   +controlPort  -> rule khớp PORT đích, bảo vệ được bindPort
+    //   +webPort      -> bảo vệ thêm cổng dashboard của frps
+    // Tách riêng để bản trung gian (có controlPort, chưa có webPort) vẫn hiện đúng.
     let isNew = false;
+    let hasWebPort = false;
     try {
       const s = await API.providerFirewall(provider.id);
       isNew = Object.prototype.hasOwnProperty.call(s, 'controlPort');
+      hasWebPort = Object.prototype.hasOwnProperty.call(s, 'webPort');
       snap = {
         enabled: Boolean(s.enabled),
         default: s.default === 'deny' ? 'deny' : 'allow',
@@ -40,6 +46,7 @@ Pages['providers/firewall'] = {
         provider: { ...FW_DEFAULT_PROVIDER(), ...(s.provider || {}) },
       };
       if (isNew) snap.controlPort = Boolean(s.controlPort);
+      if (hasWebPort) snap.webPort = Boolean(s.webPort);
       if (!snap.provider.headers) snap.provider.headers = {};
     } catch (err) {
       const hint = /404/.test(err.message) ? 'frps này có thể là bản chuẩn/cũ (không có firewall API). Cần fork Meobaka.' : err.message;
@@ -73,6 +80,8 @@ Pages['providers/firewall'] = {
           <label class="block sm:col-span-2"><span class="text-xs text-zinc-400">Headers (mỗi dòng "Key: value")</span>
             <textarea data-p="headers" rows="2" class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none" placeholder="X-API-Key: fwk_xxx">${esc(Object.entries(p.headers || {}).map(([k, v]) => `${k}: ${v}`).join('\n'))}</textarea></label>
           <label class="block sm:col-span-2"><span class="text-xs text-zinc-400">Blocked JSON path (dot, hỗ trợ {ip} + index)</span>${inp(p.blockedPath, 'data-p="blockedPath"', 'results.0.blacklisted')}</label>
+          <label class="block sm:col-span-2"><span class="text-xs text-zinc-400">Reason JSON path (tùy chọn)</span>${inp(p.reasonPath, 'data-p="reasonPath"', 'results.0.reason')}
+            <span class="block text-[11px] text-zinc-500 mt-1">Chuỗi lý do để frps ghi vào log khi chặn. Bỏ trống thì log chỉ ghi <span class="font-mono">reputation</span>.</span></label>
         </div>`;
       }
       const common = `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 pt-3 border-t border-zinc-800">
@@ -128,6 +137,13 @@ Pages['providers/firewall'] = {
           </span>
         </label>
         <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 p-2.5 text-[11px] text-amber-200">Cẩn thận: nếu <b>default policy = deny</b>, bật cái này sẽ <b>khóa mọi client</b> không có luật allow tường minh.</div>
+        ${hasWebPort ? `<label class="flex items-start gap-2 text-sm text-zinc-300 pt-1 border-t border-zinc-800 mt-1">
+          <input type="checkbox" id="fw-webport" ${snap.webPort ? 'checked' : ''} ${canUpdate ? '' : 'disabled'} class="mt-0.5 rounded bg-zinc-800 border-zinc-700"/>
+          <span>Bảo vệ cả <b>cổng dashboard</b> của frps
+            <span class="block text-[11px] text-zinc-500 mt-0.5">Áp luật cho <b>webServer.port</b>, chặn ngay lúc accept (trước bắt tay TLS).</span>
+          </span>
+        </label>
+        <div class="rounded-lg bg-red-900/20 border border-red-700/50 p-2.5 text-[11px] text-red-200"><b>Rất cẩn thận:</b> dashboard của frps chính là nơi sửa các luật này. Nếu luật/default policy chặn cổng đó, chỉ có thể gỡ bằng cách sửa file <span class="font-mono">frps_firewall.json</span> trên máy chủ rồi khởi động lại frps.</div>` : ''}
       </div>`) : ''}
 
       ${UI.card('Blacklist provider (hỏi IP lạ)', `<div class="p-4 space-y-3">
@@ -180,6 +196,7 @@ Pages['providers/firewall'] = {
 
     body.querySelector('#fw-enabled')?.addEventListener('change', (e) => { snap.enabled = e.target.checked; });
     body.querySelector('#fw-controlport')?.addEventListener('change', (e) => { snap.controlPort = e.target.checked; });
+    body.querySelector('#fw-webport')?.addEventListener('change', (e) => { snap.webPort = e.target.checked; });
     body.querySelector('#fw-default')?.addEventListener('change', (e) => { snap.default = e.target.value; });
     body.querySelector('#fw-pmode')?.addEventListener('change', (e) => { snap.provider.mode = e.target.value; drawProvider(); });
     body.querySelector('#fw-add-rule')?.addEventListener('click', () => openRuleModal(-1));
@@ -195,7 +212,8 @@ Pages['providers/firewall'] = {
       const btn = e.target.closest('button'); btn.disabled = true;
       try {
         const payload = { enabled: snap.enabled, default: snap.default, rules: snap.rules, provider: snap.provider };
-        if (isNew) payload.controlPort = Boolean(snap.controlPort); // chỉ gửi khi frps hỗ trợ
+        if (isNew) payload.controlPort = Boolean(snap.controlPort);   // chỉ gửi khi frps hỗ trợ
+        if (hasWebPort) payload.webPort = Boolean(snap.webPort);      // nt
         await API.putProviderFirewall(provider.id, payload);
         UI.toast('Đã lưu cấu hình firewall frps.', 'success');
       } catch (err) { UI.toast('Lưu lỗi: ' + err.message, 'error'); }

@@ -10,6 +10,8 @@ Pages['system/firewall'] = {
 
     const st = await API.firewallStats();
     const num = (n) => Number(n || 0).toLocaleString('vi-VN');
+    // Số IP bị ban (đã giãn CIDR) có thể vượt Number (IPv6 /32 = 2^96) -> nhóm nghìn trên CHUỖI BigInt.
+    const bigNum = (s) => String(s ?? '0').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     const mb = (n) => (Number(n || 0) / 1048576).toFixed(1) + ' MB';
 
     App.setToolbar(
@@ -32,8 +34,8 @@ Pages['system/firewall'] = {
     const built = st.builtAt ? `${new Date(st.builtAt).toLocaleString('vi-VN')} (${F.timeAgo(st.builtAt)})` : '—';
 
     const cards = `<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-      ${UI.statCard({ label: 'Firewall', value: st.enabled ? 'Bật' : 'Tắt' })}
-      ${UI.statCard({ label: 'Dải IPv4 / IPv6', value: `${num(st.ipv4Ranges)} / ${num(st.ipv6Ranges)}` })}
+      ${UI.statCard({ label: 'IP IPv4 bị ban (đã giãn CIDR)', value: bigNum(st.ipv4AddressesCovered), sub: `${num(st.ipv4Ranges)} dải` })}
+      ${UI.statCard({ label: 'Dải IPv6', value: num(st.ipv6Ranges), sub: 'mỗi dải có thể rất lớn' })}
       ${UI.statCard({ label: 'Chặn thủ công (đang hiệu lực)', value: num(st.customCount) })}
       ${UI.statCard({ label: 'Đã chặn/đánh dấu', value: num(st.hits) })}
     </div>`;
@@ -44,9 +46,17 @@ Pages['system/firewall'] = {
     const infoCard = UI.card('Trạng thái blacklist', `<div class="p-4 text-sm space-y-1.5">
       <div><span class="text-zinc-500 inline-block w-40">Chặn panel</span> ${statusPill}</div>
       <div><span class="text-zinc-500 inline-block w-40">Firewall API</span> ${apiPill}</div>
-      <div><span class="text-zinc-500 inline-block w-40">Tự cập nhật</span> ${st.autoUpdate ? 'Bật — mỗi ngày 00:00' : 'Tắt'}</div>
-      <div><span class="text-zinc-500 inline-block w-40">Nguồn</span> <span class="font-mono text-xs text-zinc-400 break-all">${F.escapeHtml(st.sourceUrl || '')}</span></div>
-      <div><span class="text-zinc-500 inline-block w-40">Build gần nhất</span> ${F.escapeHtml(built)}</div>
+      <div><span class="text-zinc-500 inline-block w-40">Tự cập nhật</span> ${st.autoUpdate ? `Bật — mỗi ngày lúc <b>${F.escapeHtml(st.updateTime || '00:00')}</b>` : 'Tắt'}</div>
+      <div class="flex"><span class="text-zinc-500 inline-block w-40 shrink-0">Nguồn (${(st.sources || []).length})</span>
+        <span class="flex-1 min-w-0">${(st.sources && st.sources.length
+          ? st.sources.map((u) => {
+            const failed = (st.sourcesFailed || []).find((x) => x.url === u);
+            return `<span class="block font-mono text-xs break-all ${failed ? 'text-red-400' : 'text-zinc-400'}">${F.escapeHtml(u)}${failed ? ` <span class="text-red-500">— lỗi: ${F.escapeHtml(failed.error)}</span>` : ''}</span>`;
+          }).join('')
+          : '<span class="text-zinc-600 text-xs">—</span>')}</span></div>
+      <div><span class="text-zinc-500 inline-block w-40">Tổng IP bị ban</span> IPv4: <b class="text-zinc-200">${bigNum(st.ipv4AddressesCovered)}</b> <span class="text-zinc-600">(${num(st.ipv4Ranges)} dải gộp)</span> · IPv6: <b class="text-zinc-200">${bigNum(st.ipv6AddressesCovered)}</b> <span class="text-zinc-600">(${num(st.ipv6Ranges)} dải)</span></div>
+      <div><span class="text-zinc-500 inline-block w-40">Nhãn (reason)</span> ${st.labelCount ? `<b class="text-zinc-200">${num(st.labelCount)}</b> loại lấy từ list nguồn` : '<span class="text-zinc-600">— list nguồn chưa ghi lý do sau IP</span>'}</div>
+      <div><span class="text-zinc-500 inline-block w-40">Build gần nhất</span> ${F.escapeHtml(built)}${st.sourceCount ? ` <span class="text-zinc-600">· gộp ${st.sourceCount} nguồn</span>` : ''}</div>
       <div><span class="text-zinc-500 inline-block w-40">Bộ nhớ dùng</span> ${mb(st.memoryBytes)} <span class="text-zinc-600">(nạp thẳng vào RAM)</span></div>
       ${st.lastError ? `<div class="text-red-400"><span class="text-zinc-500 inline-block w-40">Lỗi lần cập nhật</span> ${F.escapeHtml(st.lastError)}</div>` : ''}
       ${!st.loaded ? '<div class="text-amber-400 mt-1">Chưa có dữ liệu blacklist — bấm "Cập nhật blacklist ngay" để tải lần đầu.</div>' : ''}
@@ -104,9 +114,12 @@ Pages['system/firewall'] = {
       box.innerHTML = UI.spinner();
       try {
         const r = await API.firewallCheck(ips);
+        const srcTag = (s) => (s === 'custom' ? '<span class="text-amber-400">chặn tay</span>' : s === 'list' ? '<span class="text-zinc-500">list</span>' : '');
         const rows = r.results.map((x) => `<tr class="border-b border-zinc-800/60">
           <td class="px-3 py-1.5 font-mono text-xs">${F.escapeHtml(x.ip)}</td>
           <td class="px-3 py-1.5">${x.blacklisted ? '<span class="text-red-400 font-medium">BẨN — bị chặn</span>' : '<span class="text-emerald-400">Sạch</span>'}</td>
+          <td class="px-3 py-1.5 text-xs text-zinc-300">${F.escapeHtml(x.reason || '')}</td>
+          <td class="px-3 py-1.5 text-xs">${srcTag(x.source)}</td>
         </tr>`).join('');
         box.innerHTML = `<div class="mt-1 text-xs text-zinc-400">${r.blacklisted}/${r.count} IP nằm trong blacklist.</div>
           <div class="overflow-x-auto mt-2"><table class="w-full text-sm"><tbody>${rows}</tbody></table></div>`;
@@ -273,6 +286,7 @@ function docsHtml(origin) {
         <div class="font-medium text-zinc-100 mb-1">Firewall hoạt động thế nào</div>
         <ul class="list-disc list-inside space-y-1 text-zinc-400">
           <li>Panel tải danh sách IP xấu (IP đơn + dải CIDR) từ nguồn, xử lý thành file nhị phân nạp vào RAM.</li>
+          <li><b>Lý do (reason)</b>: phần ghi sau địa chỉ trong list nguồn được giữ làm nhãn — <span class="font-mono text-zinc-300">45.8.146.0/24 # botnet c2</span> hoặc không cần <span class="font-mono text-zinc-300">#</span> cũng được (<span class="font-mono text-zinc-300">2.56.189.17 nordvpn</span>). IP chặn tay dùng lý do bạn nhập. Không có gì thì reason rỗng.</li>
           <li>Tự cập nhật lại <b>mỗi ngày lúc 00:00</b> (có thể tắt trong Configs).</li>
           <li>Khi <b>bật</b>: request tới panel từ IP nằm trong blacklist bị <b>chặn 403</b> (chế độ <i>chặn</i>) hoặc chỉ <b>đếm</b> (chế độ <i>giám sát</i>). <b>Localhost luôn được bỏ qua</b> để không tự khóa.</li>
           <li>Bật/tắt + đổi chế độ + nguồn: <b>System → Configs → Firewall</b>.</li>
@@ -283,7 +297,8 @@ function docsHtml(origin) {
         <p class="text-zinc-400 mb-2">Cấp <b>API key</b> ở trên rồi gọi các endpoint sau (không cần đăng nhập panel). Xác thực qua header <code class="text-zinc-300">X-API-Key</code> (hoặc <code class="text-zinc-300">Authorization: Bearer</code>, hoặc <code class="text-zinc-300">?key=</code>).</p>
         <div class="rounded-lg bg-zinc-950 border border-zinc-800 p-3 font-mono text-xs text-zinc-300 space-y-3 overflow-x-auto">
           <div><span class="text-emerald-400">GET</span>  ${esc(origin)}/api/fw/check?ip=1.2.3.4
-            <div class="text-zinc-500"># nhiều IP: lặp ?ip=a&amp;ip=b</div></div>
+            <div class="text-zinc-500"># nhiều IP: lặp ?ip=a&amp;ip=b</div>
+            <div class="text-zinc-500"># trả kèm reason + source cho mỗi IP</div></div>
           <div><span class="text-sky-400">POST</span> ${esc(origin)}/api/fw/check
             <div class="text-zinc-500"># body: {"ips":["1.2.3.4","8.8.8.8"]}  · tối đa 10.000</div></div>
           <div><span class="text-amber-400">POST</span> ${esc(origin)}/api/fw/block
@@ -294,7 +309,8 @@ function docsHtml(origin) {
         </div>
         <div class="mt-3 font-medium text-zinc-100 mb-1">Ví dụ curl</div>
         <pre class="rounded-lg bg-zinc-950 border border-zinc-800 p-3 font-mono text-[11px] text-zinc-300 overflow-x-auto">curl -H "X-API-Key: fwk_xxx" "${esc(origin)}/api/fw/check?ip=1.0.0.104"
-# -> {"ready":true,"count":1,"blacklisted":1,"results":[{"ip":"1.0.0.104","blacklisted":true}]}
+# -> {"ready":true,"count":1,"blacklisted":1,
+#     "results":[{"ip":"1.0.0.104","blacklisted":true,"reason":"botnet c2","source":"list"}]}
 
 curl -X POST "${esc(origin)}/api/fw/check" \\
   -H "X-API-Key: fwk_xxx" -H "Content-Type: application/json" \\

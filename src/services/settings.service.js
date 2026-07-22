@@ -37,9 +37,25 @@ const DEFAULTS = {
   firewallEnabled: false,     // CHẶN panel: request từ IP blacklist bị 403/đếm
   firewallApiEnabled: false,  // API tra cứu công khai /api/fw/* (chia sẻ) — không liên quan chặn panel
   firewallMode: 'block',      // (chỉ khi firewallEnabled) 'block' = 403 | 'monitor' = chỉ đếm
-  firewallSourceUrl: 'https://raw.githubusercontent.com/bitwire-it/ipblocklist/main/inbound.txt',
-  firewallAutoUpdate: true,   // tự tải nguồn + build lại mỗi ngày 00:00 (khi firewall/API bật)
+  firewallSourceUrl: 'https://raw.githubusercontent.com/bitwire-it/ipblocklist/main/inbound.txt', // (cũ) nguồn đơn — giữ tương thích
+  firewallSources: [],        // NHIỀU nguồn (mỗi phần tử 1 URL text IP/CIDR). Rỗng = dùng firewallSourceUrl. Tải hết rồi GỘP.
+  firewallAutoUpdate: true,   // tự tải nguồn + build lại mỗi ngày (khi firewall/API bật)
+  firewallUpdateTime: '00:00', // GIỜ chạy tự cập nhật hàng ngày (HH:MM, giờ máy chủ)
 };
+
+const MAX_FW_SOURCES = 30;   // trần số nguồn blacklist (chống lạm dụng / tải quá lâu)
+
+/**
+ * Danh sách nguồn blacklist HIỆU LỰC (đã chuẩn hóa, khử trùng).
+ * Ưu tiên mảng firewallSources; rỗng thì lùi về firewallSourceUrl đơn (tương thích cũ).
+ */
+export function firewallSourceList(s = getSettings()) {
+  const arr = Array.isArray(s.firewallSources) ? s.firewallSources : [];
+  const list = [...new Set(arr.map((u) => String(u).trim()).filter(Boolean))];
+  if (list.length) return list;
+  const single = String(s.firewallSourceUrl || '').trim();
+  return single ? [single] : [DEFAULTS.firewallSourceUrl];
+}
 
 let cache = null;
 
@@ -108,7 +124,25 @@ export function previewSettings(patch) {
     if (u && !/^https?:\/\//i.test(u)) { const e = new Error('Firewall source URL phải bắt đầu bằng http(s)://'); e.status = 400; throw e; }
     next.firewallSourceUrl = u || DEFAULTS.firewallSourceUrl;
   }
+  if (patch.firewallSources !== undefined) {
+    // Chấp nhận mảng HOẶC chuỗi nhiều dòng (textarea) -> mảng URL đã chuẩn hóa.
+    let list = patch.firewallSources;
+    if (typeof list === 'string') list = list.split(/[\r\n]+/);
+    if (!Array.isArray(list)) list = [];
+    list = [...new Set(list.map((u) => String(u).trim()).filter(Boolean))];
+    for (const u of list) {
+      if (!/^https?:\/\//i.test(u)) { const e = new Error(`Nguồn blacklist phải bắt đầu bằng http(s)://: "${u}"`); e.status = 400; throw e; }
+    }
+    if (list.length > MAX_FW_SOURCES) { const e = new Error(`Tối đa ${MAX_FW_SOURCES} nguồn blacklist.`); e.status = 400; throw e; }
+    next.firewallSources = list;
+  }
   if (patch.firewallAutoUpdate !== undefined) next.firewallAutoUpdate = bool(patch.firewallAutoUpdate);
+  if (patch.firewallUpdateTime !== undefined) {
+    const t = String(patch.firewallUpdateTime).trim();
+    const m = /^(\d{1,2}):(\d{2})$/.exec(t);
+    if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) { const e = new Error('Giờ tự cập nhật phải dạng HH:MM (00:00–23:59).'); e.status = 400; throw e; }
+    next.firewallUpdateTime = `${m[1].padStart(2, '0')}:${m[2]}`;
+  }
 
   if (next.panelSSL) {
     // Bật SSL bắt buộc có Server IP + Port (cert tự tạo gắn theo IP; panel có địa chỉ rõ ràng).

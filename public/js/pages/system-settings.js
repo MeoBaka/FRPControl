@@ -109,9 +109,17 @@ Pages['system/settings'] = {
               </select>
               <p class="text-[11px] text-zinc-500 mt-1">Chỉ áp dụng khi bật <b>chặn panel</b>. Dùng <b>Giám sát</b> để thử trước.</p>
             </div>
-            <div class="flex items-start pt-6">${checkbox('Tự cập nhật mỗi ngày 00:00', 'firewallAutoUpdate', settings.firewallAutoUpdate, 'Tự tải lại nguồn + build lại nhị phân hàng ngày (khi firewall hoặc API bật).')}</div>
+            <div>
+              <label class="block text-xs text-zinc-400 mb-1">Giờ tự cập nhật (hàng ngày)</label>
+              <input name="firewallUpdateTime" type="time" value="${F.escapeHtml(settings.firewallUpdateTime || '00:00')}" ${canUpdate ? '' : 'disabled'} class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none" />
+              <div class="mt-2">${checkbox('Bật tự cập nhật hàng ngày', 'firewallAutoUpdate', settings.firewallAutoUpdate, 'Tự tải lại nguồn + build lại nhị phân vào giờ trên (khi firewall hoặc API bật). Theo giờ máy chủ.')}</div>
+            </div>
           </div>
-          ${field('Nguồn blacklist (URL)', 'firewallSourceUrl', settings.firewallSourceUrl, { full: true, ph: 'https://…/inbound.txt', hint: 'File text mỗi dòng 1 IP hoặc CIDR. Mặc định: bitwire-it/ipblocklist.' })}
+          <div class="sm:col-span-2">
+            <label class="block text-xs text-zinc-400 mb-1">Nguồn blacklist (mỗi dòng 1 URL)</label>
+            <textarea name="firewallSources" rows="4" spellcheck="false" placeholder="https://raw.githubusercontent.com/bitwire-it/ipblocklist/main/inbound.txt&#10;https://…/vpn-list.txt&#10;https://…/abuse.txt" ${canUpdate ? '' : 'disabled'} class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none">${F.escapeHtml((settings.firewallSources && settings.firewallSources.length ? settings.firewallSources : [settings.firewallSourceUrl]).filter(Boolean).join('\n'))}</textarea>
+            <p class="text-[11px] text-zinc-500 mt-1">Thêm nhiều nguồn VPN/abuse — mỗi dòng 1 URL (file text, mỗi dòng 1 IP hoặc CIDR). Tất cả được <b>tải rồi gộp</b>, dải trùng tự khử. Nguồn nào tải lỗi sẽ bị bỏ qua, không làm hỏng cả blacklist. Tối đa 30 nguồn.</p>
+          </div>
           <p class="text-[11px] text-zinc-500">Blacklist chỉ được tải/cập nhật khi bật <b>ít nhất một</b> trong hai công tắc trên. Quản lý & tra cứu ở <b>System → Firewall</b>.</p>
         </div>`)}
 
@@ -160,7 +168,8 @@ Pages['system/settings'] = {
         firewallApiEnabled: f.firewallApiEnabled.checked,
         firewallMode: f.firewallMode.value,
         firewallAutoUpdate: f.firewallAutoUpdate.checked,
-        firewallSourceUrl: f.firewallSourceUrl.value.trim(),
+        firewallUpdateTime: f.firewallUpdateTime.value,
+        firewallSources: f.firewallSources.value.split(/[\r\n]+/).map((u) => u.trim()).filter(Boolean),
       };
       try {
         const res = await API.updateSettings(payload);

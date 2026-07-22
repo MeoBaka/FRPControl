@@ -26,7 +26,21 @@ Pages['nodes/visitors'] = {
     const node = Store.selectedNode();
 
     const F = Fmt;
-    const store = await API.getStore(node.id);
+    // Lỗi nạp store (node offline/timeout) PHẢI hiện trong trang, không được ném lên route() —
+    // route() thay sạch nội dung bằng error box, mất luôn selector nên không đổi node được nữa.
+    let store;
+    try {
+      store = await API.getStore(node.id);
+    } catch (err) {
+      root.innerHTML = `<div class="p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div class="flex items-center gap-2">${UI.selectorBar('node')} ${UI.help('visitors')}</div>
+        </div>
+        ${UI.errorBox(`Không lấy được store của node "${F.escapeHtml(node.name)}".`, err.message)}
+      </div>`;
+      UI.wireSelector(root);
+      return;
+    }
 
     const canCreate = Store.can('visitors.create');
     const canUpdate = Store.can('visitors.update');
@@ -53,6 +67,12 @@ Pages['nodes/visitors'] = {
       if (!def) throw new Error(`"${name}" không có trong store.`);
       const inner = def[def.type] || {};
       return API.updateStoreVisitor(node.id, name, { ...def, [def.type]: { ...inner, enabled: on } });
+    };
+    // Toggle bật/tắt 1 visitor ngay trên bảng (enabled !== false = bật). Bấm để đảo trạng thái.
+    // Tắt = frpc gỡ hẳn visitor khỏi config đang chạy -> dừng nathole precheck quét lại liên tục.
+    const enableSwitch = (def) => {
+      const on = (def[def.type] || {}).enabled !== false;
+      return `<button type="button" data-toggle="${F.escapeHtml(def.name)}" role="switch" aria-checked="${on}" title="${on ? 'Đang bật — bấm để tắt' : 'Đang tắt — bấm để bật'}" class="align-middle relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${on ? 'bg-brand-600' : 'bg-zinc-600'}"><span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${on ? 'translate-x-4' : 'translate-x-1'}"></span></button>`;
     };
     const bulk = UI.bulkSelect({
       onDone: () => App.rerender(),
@@ -82,6 +102,7 @@ Pages['nodes/visitors'] = {
         <td class="px-3 py-2">${F.typeTag(def.type)}</td>
         <td class="px-3 py-2 text-xs text-zinc-400">${F.escapeHtml(summary || '—')}</td>
         <td class="px-3 py-2 text-right whitespace-nowrap">
+          ${canUpdate ? enableSwitch(def) + ' ' : ''}
           ${canUpdate ? UI.btn('Sửa', { size: 'sm', attrs: `data-edit="${F.escapeHtml(def.name)}"` }) : ''}
           ${canDelete ? UI.btn('Xóa', { size: 'sm', variant: 'danger', attrs: `data-del="${F.escapeHtml(def.name)}"` }) : ''}
         </td></tr>`;
@@ -108,6 +129,23 @@ Pages['nodes/visitors'] = {
     view.querySelector('#add-visitor')?.addEventListener('click', () => openVisitorForm(node.id, 'create', null, variant));
     view.querySelector('#add-visitor-empty')?.addEventListener('click', () => openVisitorForm(node.id, 'create', null, variant));
     view.addEventListener('click', async (e) => {
+      const tog = e.target.closest('[data-toggle]');
+      if (tog) {
+        const name = tog.dataset.toggle;
+        const def = byName.get(name);
+        if (!def) return;
+        const inner = def[def.type] || {};
+        const cur = inner.enabled !== false;
+        tog.disabled = true;
+        try {
+          await API.updateStoreVisitor(node.id, name, { ...def, [def.type]: { ...inner, enabled: !cur } });
+          inner.enabled = !cur;            // cập nhật state cục bộ
+          def[def.type] = inner;
+          tog.outerHTML = enableSwitch(def); // chỉ vẽ lại nút toggle, KHÔNG re-render cả bảng
+          UI.toast(cur ? `Đã tắt "${name}".` : `Đã bật "${name}".`, 'success');
+        } catch (err) { tog.disabled = false; UI.toast('Lỗi: ' + err.message, 'error'); }
+        return;
+      }
       const edit = e.target.closest('[data-edit]');
       if (edit) {
         try { const def = await API.getStoreVisitor(node.id, edit.dataset.edit); openVisitorForm(node.id, 'edit', def, variant); }

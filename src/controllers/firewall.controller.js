@@ -20,7 +20,11 @@ export function check(req, res) {
   const ips = collectIps(req);
   if (!ips.length) return res.status(400).json({ error: 'Thiếu IP. Dùng ?ip=1.2.3.4 hoặc body {"ips":["..."]}.' });
   if (ips.length > MAX_BATCH) return res.status(413).json({ error: `Tối đa ${MAX_BATCH} IP mỗi request.` });
-  const results = ips.map((ip) => ({ ip, blacklisted: bl.isBlacklisted(ip) }));
+  // reason: lý do chặn (custom) hoặc nhãn cuối dòng trong list nguồn; source: 'custom' | 'list' | ''
+  const results = ips.map((ip) => {
+    const r = bl.lookup(ip);
+    return { ip, blacklisted: r.blacklisted, reason: r.reason, source: r.source };
+  });
   res.json({
     ready: bl.isLoaded(),
     count: results.length,

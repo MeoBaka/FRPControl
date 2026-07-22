@@ -237,13 +237,17 @@ window.UI = (() => {
     const td = (id) => `<td class="px-3 py-2"><input type="checkbox" data-bulk="${escapeHtml(String(id))}" class="${CB}" /></td>`;
     const pageIds = () => [...tableEl.querySelectorAll('[data-bulk]')].map((c) => c.dataset.bulk);
 
+    // Thanh hành động NỔI (position:fixed) ở đáy màn hình — cố ý KHÔNG nằm trong luồng bố cục:
+    // thanh cũ chèn phía trên bảng làm cả bảng tụt xuống ngay khi tick ô đầu tiên, ô thứ 2 nhảy
+    // chỗ nên rất khó tick nhanh. Fixed => bảng đứng yên tuyệt đối, hàng không xê dịch một pixel.
+    // z-40: dưới modal (z-50) và toast (z-[60]).
     function renderBar() {
       if (!barEl) return;
       if (!sel.size) { barEl.innerHTML = ''; barEl.classList.add('hidden'); return; }
-      barEl.classList.remove('hidden');
-      barEl.innerHTML = `<div class="flex flex-wrap items-center gap-2 rounded-lg border border-brand-500/40 bg-brand-600/10 px-3 py-2 mb-3">
-        <span class="text-sm text-brand-200">Đã chọn <b>${sel.size}</b></span>
-        <div class="flex-1"></div>
+      barEl.classList.remove('hidden'); // div cha cao 0 (con là fixed) -> không đẩy bảng
+      barEl.innerHTML = `<div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center justify-center gap-2 rounded-xl border border-brand-500/40 bg-zinc-900/95 backdrop-blur px-4 py-2.5 shadow-2xl shadow-black/60 max-w-[calc(100vw-2rem)]">
+        <span class="text-sm text-zinc-200 whitespace-nowrap">Đã chọn <b class="text-brand-400">${sel.size}</b></span>
+        <span class="w-px h-5 bg-zinc-700 mx-1"></span>
         ${actions.map((a, i) => btn(a.label, { size: 'sm', variant: a.variant, attrs: `data-bulk-act="${i}"` })).join(' ')}
         ${btn('Bỏ chọn', { size: 'sm', attrs: 'data-bulk-clear' })}
       </div>`;

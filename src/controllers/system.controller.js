@@ -243,6 +243,7 @@ export async function updateSettings(req, res, next) {
     if (listenerChanged) await runtime.checkListen(desired); // KIỂM TRA port/cert TRƯỚC — lỗi thì không lưu
     settings.commitSettings(nextS);
     blacklist.ensureData(); // vừa bật firewall/API mà chưa có blacklist -> tải nền ngay
+    blacklist.rescheduleAutoUpdate(); // giờ tự cập nhật mới có hiệu lực ngay (không cần restart)
 
     if (listenerChanged) {
       // Chuyển listener SAU khi đã trả response (đã checkListen nên gần như chắc chắn thành công).
